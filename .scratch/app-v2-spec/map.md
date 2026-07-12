@@ -21,7 +21,7 @@ Label: wayfinder:map
 
 <!-- one line per closed ticket: gist + link -->
 
-- [ชื่อแอพและแบรนด์](issues/05-app-name-brand.md) — **ลุยเควส (LuiQuest)**, tagline "อยากเก่งอะไร ลุยเลย — วันละเควส", โทนสนุกเป็นกันเองแบบไทย ๆ (กลไก quest/XP/streak คงเดิม); repo → `ARCHEMETIS/luiquest`, โฟลเดอร์ → `luiquest/`
+- [ชื่อแอพและแบรนด์](issues/05-app-name-brand.md) — **ลุยเควส (LuiQuest)**, tagline "อยากเก่งอะไร ลุยเลย — วันละเควส", โทนสนุกเป็นกันเองแบบไทย ๆ (กลไก quest/XP/streak คงเดิม); repo → `ARCHEMETIS/luiquest` (โฟลเดอร์ยังรอ rename เป็น `luiquest/` — ติด file lock ดูท้าย ticket)
 - [ฟีเจอร์ MVP: อะไรอยู่ อะไรตัด อะไรเพิ่ม](issues/06-mvp-features.md) — ยกของเดิมมาครบ (XP/streak/phase/grade/แชทโค้ช/checklist gating/PWA); ของใหม่แบ่ง 2 waves: Wave 1 (~2 สัปดาห์) = ลิงก์ชวนเพื่อน + leaderboard + การ์ดแชร์ streak, Wave 2 = web push + เพื่อน/duo + ชั้นจ่ายเงิน; multi-topic เป็นเส้นแบ่งฟรี/จ่าย (ฟรี 1 หัวข้อ, premium หลายหัวข้อ)
 - [วิธีล็อกอินและ onboarding flow](issues/04-login-onboarding.md) — Google Sign-in อย่างเดียว (Supabase Auth, ไม่มี guest); onboarding 3 ขั้น (หัวข้อ → ระดับ → เวลา/วัน) จบใน <1 นาที; เควสแรกเป็น starter quest สำเร็จรูป 18 ชุด (6 หัวข้อ × 3 ระดับ) ขึ้นทันทีไม่กินโควต้า
 - [โควต้า Gemini free tier ปัจจุบัน และกลยุทธ์ประหยัด AI](issues/03-gemini-quota-research.md) — ตัวเลขจริงดูได้แต่ใน AI Studio dashboard; planning number: 3-flash ~1,500 RPD, flash-lite ~1,000, 2.5-flash เหลือ ~250 (เลิกใช้เป็นตัวหลัก); จุดตายคือ RPM → แก้ด้วย pre-generate เควสตอนกลางคืน + cache + จำกัดแชท 10/คน/วัน + fallback chain; รับได้ ~250–600 active users/วัน
