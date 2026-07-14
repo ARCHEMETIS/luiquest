@@ -1,6 +1,6 @@
 // หน้า Onboarding 3 ขั้นของลุยเควส — mock data ด้านล่าง ฝั่งโค้ดต่อ API จริงเองภายหลัง
 // states: step1 | step2 | step3 | generating | done (ตาม design-brief section 3.2–3.4 + done เพิ่มเติม)
-// หัวข้อ curated จบขั้น 3 แล้วไป done ทันที (starter quest สำเร็จรูป) — หัวข้อพิมพ์อิสระต้องผ่าน generating ก่อน
+// ทุกหัวข้อผ่านหน้า generating เสมอ (มาสคอต+progress) — curated เร็วจริงแต่ตั้ง floor เวลาไว้ให้ไม่วูบวาบเกินไป
 
 import { useEffect, useRef, useState } from "react";
 import GhostMascot from "./GhostMascot";
@@ -163,7 +163,8 @@ export default function OnboardingFlow({ initialState = "step1", onComplete, sho
   const canContinue =
     ui === "step1" ? topicId !== null || isCustomTopic : ui === "step2" ? levelId !== null : timeId !== null;
 
-  // หมุนข้อความบนหน้ารอ + ยิง API จริงทันที (หัวข้อพิมพ์อิสระ) — เข้า done ตอน API ตอบสำเร็จจริง ไม่ใช่จับเวลาลวง
+  // หมุนข้อความบนหน้ารอ + ยิง API จริงทันที — เข้า done ตอน API ตอบสำเร็จจริง ไม่ใช่จับเวลาลวงอย่างเดียว
+  // curated มัก resolve เร็วมาก (~0.9 วิ) เลยตั้ง floor ไว้ให้มาสคอตได้โชว์อย่างน้อยรอบนึง ไม่วูบวาบจนดูเป็นบั๊ก
   useEffect(() => {
     if (ui !== "generating") return;
     setMsgIndex(0);
@@ -173,7 +174,15 @@ export default function OnboardingFlow({ initialState = "step1", onComplete, sho
     let cancelled = false;
     (async () => {
       try {
-        await onComplete?.({ topicId: null, topicTitle: topicLabel, level: levelId, minutesPerDay: timeId });
+        await Promise.all([
+          onComplete?.({
+            topicId: isCustomTopic ? null : topicId,
+            topicTitle: topicLabel,
+            level: levelId,
+            minutesPerDay: timeId,
+          }),
+          new Promise((r) => setTimeout(r, 2500)),
+        ]);
         if (!cancelled) setUi("done");
       } catch (err) {
         if (!cancelled) {
@@ -189,28 +198,12 @@ export default function OnboardingFlow({ initialState = "step1", onComplete, sho
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ui]);
 
-  // หน้าคั่นค้าง ~0.9 วิ แล้วค่อยเข้า state ถัดไป — หัวข้อ curated (next==="done") ยิง API จริงคู่ขนานกับเวลาที่ค้างหน้านี้
+  // หน้าคั่นระหว่าง step ค้าง ~0.9 วิ แล้วค่อยเข้า state ถัดไป (ไม่มี API ยิงตรงนี้แล้ว — ย้ายไปรวมที่ "generating" ทั้งหมด)
   useEffect(() => {
     if (!transition) return;
     let cancelled = false;
     (async () => {
-      if (transition.next === "done") {
-        try {
-          await Promise.all([
-            onComplete?.({ topicId, topicTitle: topicLabel, level: levelId, minutesPerDay: timeId }),
-            new Promise((r) => setTimeout(r, 950)),
-          ]);
-        } catch (err) {
-          if (!cancelled) {
-            setGenError(err?.message || "เริ่มเควสไม่สำเร็จ ลองใหม่อีกครั้ง");
-            setTransition(null);
-            setUi("step3");
-          }
-          return;
-        }
-      } else {
-        await new Promise((r) => setTimeout(r, 950));
-      }
+      await new Promise((r) => setTimeout(r, 950));
       if (!cancelled) {
         setUi(transition.next);
         setTransition(null);
@@ -219,7 +212,6 @@ export default function OnboardingFlow({ initialState = "step1", onComplete, sho
     return () => {
       cancelled = true;
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [transition]);
 
   // เลือกครบแล้วเลื่อนหน้าลงไปหาปุ่มให้เอง (ถ้าปุ่มอยู่พ้นจอ)
@@ -232,7 +224,7 @@ export default function OnboardingFlow({ initialState = "step1", onComplete, sho
   const goNext = () => {
     if (ui === "step1") setTransition({ done: 1, next: "step2" });
     else if (ui === "step2") setTransition({ done: 2, next: "step3" });
-    else if (ui === "step3") setTransition({ done: 3, next: isCustomTopic ? "generating" : "done" });
+    else if (ui === "step3") setTransition({ done: 3, next: "generating" });
   };
 
   const step = STEP_NUMBER[ui];
