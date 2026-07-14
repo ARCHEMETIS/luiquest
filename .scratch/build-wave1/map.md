@@ -24,6 +24,7 @@ Label: wayfinder:map
 <!-- one line per closed ticket: gist + link -->
 
 - **03 schema ขึ้น production แล้ว (14 ก.ค.):** 14 ตาราง + 3 views + RLS 28 policies + bucket + seed ครบ, ทดสอบ anon key ผ่าน, ปิดจุดรั่ว leaderboard (revoke anon) — ค้างแค่ bootstrap admin หลังล็อกอินครั้งแรก → [issues/03-deploy-schema.md](issues/03-deploy-schema.md)
+- **04 starter quests 18 ชุด seed เข้า production แล้ว (14 ก.ค.):** เขียนเนื้อหาไทยครบ 6 หัวข้อ × 3 ระดับ, ลิงก์ทั้งหมดมาจาก thai-lesson-sources.md, เช็ค 200 ครบ, seed ผ่าน `npm run seed:starter-quests` (supabase-js upsert, ไม่ต้องใช้ SQL Editor) — กำหนด shape `content`/`checklist` เองเพราะสเปกเดิมไม่ได้ล็อก (ดูรายละเอียดใน ticket) → [issues/04-seed-starter-quests.md](issues/04-seed-starter-quests.md)
 
 ## Not yet specified
 
