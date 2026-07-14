@@ -12,7 +12,16 @@ async function callFn(name, body, token) {
   });
   if (!res.ok) {
     const detail = await res.text().catch(() => '');
-    throw new Error(`fn ${name} ล้มเหลว (${res.status}): ${detail}`);
+    let parsed = null;
+    try {
+      parsed = JSON.parse(detail);
+    } catch {
+      // ไม่ใช่ JSON — ปล่อย parsed เป็น null
+    }
+    const err = new Error(parsed?.error || `fn ${name} ล้มเหลว (${res.status}): ${detail}`);
+    err.status = res.status;
+    if (parsed?.code) err.code = parsed.code;
+    throw err;
   }
   return res.json();
 }
