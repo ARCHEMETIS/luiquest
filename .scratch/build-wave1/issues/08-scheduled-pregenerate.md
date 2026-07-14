@@ -1,7 +1,7 @@
 # Netlify Scheduled Function: pre-generate เควสรายวันกลางคืน
 
 Type: task
-Status: open
+Status: closed (14 ก.ค. 2026, commit 2f67f74)
 Blocked by: 07
 
 ## งานที่ต้องทำ

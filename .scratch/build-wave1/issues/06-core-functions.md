@@ -1,7 +1,7 @@
 # เขียน Netlify Functions แกนของลูปเควส
 
 Type: task
-Status: open
+Status: closed (14 ก.ค. 2026, commit 2f67f74)
 Blocked by: 02, 03
 
 ## งานที่ต้องทำ

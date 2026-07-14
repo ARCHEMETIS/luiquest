@@ -1,7 +1,7 @@
 # ตั้งค่าหัวข้อ curated + roadmap + whitelist โดเมน
 
 Type: task
-Status: open
+Status: closed (14 ก.ค. 2026, commit 2f67f74)
 Blocked by: 03
 
 ## งานที่ต้องทำ
