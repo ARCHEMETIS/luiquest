@@ -151,6 +151,29 @@ export async function createCuratedRoadmap(admin, { userId, topicId, topicSlug, 
       err.code = 'FREE_PLAN_ACTIVE_ROADMAP_LIMIT';
       throw err;
     }
+    // race: request คู่ขนาน (double-tap) แทรก insert หัวข้อเดียวกันไปก่อน — เช็ค existing ข้างบนไม่เห็นกัน
+    // ดึงแถวที่ชนะมาคืนแบบ reused แทนที่จะ 500 ใส่ผู้ใช้ (แถวนั้น active อยู่แล้วจากการ insert ที่ชนะ)
+    if (roadmapErr.code === '23505') {
+      const { data: raced, error: racedErr } = await admin
+        .from('roadmaps')
+        .select('id, topic_id, topic_title, level, minutes_per_day, is_active, status, created_at')
+        .eq('user_id', userId)
+        .eq('topic_id', topicId)
+        .single();
+      if (racedErr) throw racedErr;
+      const { data: quest, error: questErr } = await admin
+        .from('daily_quests')
+        .select('id, roadmap_id, phase_id, day_number, title, description, content, xp_reward')
+        .eq('roadmap_id', raced.id)
+        .eq('day_number', 1)
+        .maybeSingle();
+      if (questErr) throw questErr;
+      const { data: checklist, error: checklistErr } = quest
+        ? await admin.from('quest_checklist_items').select('id, order_index, label, link_url').eq('quest_id', quest.id)
+        : { data: [], error: null };
+      if (checklistErr) throw checklistErr;
+      return { roadmap: raced, quest, checklist: checklist ?? [], reused: true };
+    }
     throw roadmapErr;
   }
 
