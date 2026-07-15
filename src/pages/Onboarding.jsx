@@ -2,13 +2,13 @@ import { useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import OnboardingFlow from '../components/OnboardingFlow.jsx';
 import { useAuth } from '../hooks/useAuth.jsx';
-import { useProfile } from '../hooks/useProfile.js';
+import { useProfile } from '../hooks/useProfile.jsx';
 import { api } from '../lib/api.js';
 import { fetchTopics, TOPIC_ID_TO_SLUG, LEVEL_ID_TO_LEVEL } from '../lib/topics.js';
 
 export default function Onboarding() {
   const { session } = useAuth();
-  const { activeRoadmapId: roadmapId, loading } = useProfile(session);
+  const { activeRoadmapId: roadmapId, loading } = useProfile();
   const navigate = useNavigate();
   const token = session?.access_token;
 

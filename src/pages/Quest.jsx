@@ -2,18 +2,9 @@ import { useCallback, useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import DailyQuestPage from '../components/DailyQuestPage.jsx';
 import { useAuth } from '../hooks/useAuth.jsx';
-import { useProfile } from '../hooks/useProfile.js';
+import { useProfile } from '../hooks/useProfile.jsx';
 import { api } from '../lib/api.js';
-
-// เฟส EXP ต่อแรงค์ — ต้องตรงกับ threshold จริงใน netlify/functions/_shared/gameplay.js (computeGrade)
-const GRADE_BANDS = [
-  { grade: 'F', min: 0 },
-  { grade: 'D', min: 1 },
-  { grade: 'C', min: 3 },
-  { grade: 'B', min: 7 },
-  { grade: 'A', min: 14 },
-];
-const GRADE_ORDER = GRADE_BANDS.map((b) => b.grade);
+import { GRADE_BANDS, GRADE_ORDER } from '../lib/gradeBands.js';
 
 function gradeProgress(streak) {
   const idx = GRADE_BANDS.reduce((acc, b, i) => (streak >= b.min ? i : acc), 0);
@@ -52,7 +43,7 @@ export default function Quest() {
     error: profileError,
     refetch: refetchProfile,
     patchProfile,
-  } = useProfile(session);
+  } = useProfile();
   const navigate = useNavigate();
   const token = session?.access_token;
 

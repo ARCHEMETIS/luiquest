@@ -7,6 +7,7 @@ import Leaderboard from './pages/Leaderboard.jsx';
 import Profile from './pages/Profile.jsx';
 import Stats from './pages/Stats.jsx';
 import { AuthProvider, useAuth } from './hooks/useAuth.jsx';
+import { ProfileProvider } from './hooks/useProfile.jsx';
 
 // เพจที่ต้องล็อกอินก่อนเท่านั้น — เควสจริง/onboarding/แชทโค้ช/leaderboard/profile ล้วนผูกกับผู้ใช้
 function RequireAuth({ children }) {
@@ -21,7 +22,9 @@ function RequireAuth({ children }) {
 export default function App() {
   return (
     <AuthProvider>
-      <AppRoutes />
+      <ProfileProvider>
+        <AppRoutes />
+      </ProfileProvider>
     </AuthProvider>
   );
 }

@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import CoachChatPage from '../components/CoachChatPage.jsx';
 import { useAuth } from '../hooks/useAuth.jsx';
-import { useProfile } from '../hooks/useProfile.js';
+import { useProfile } from '../hooks/useProfile.jsx';
 import { api } from '../lib/api.js';
 import { supabase } from '../lib/supabaseClient.js';
 
@@ -25,7 +25,7 @@ export default function Coach() {
     activeRoadmapId: roadmapId,
     loading: profileLoading,
     error: profileError,
-  } = useProfile(session);
+  } = useProfile();
   const navigate = useNavigate();
   const token = session?.access_token;
 
