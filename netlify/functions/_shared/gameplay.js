@@ -1,5 +1,7 @@
 // กติกาเกม: คำนวณ streak ใหม่ตอนทำเควสเสร็จ + letter grade จาก streak ปัจจุบัน
-// เป็น source of truth เดียวที่ complete-quest.js เรียกใช้ (ห้ามคำนวณซ้ำที่อื่น)
+// หมายเหตุ 2026-07-16: complete-quest.js ย้ายการคำนวณจริงลง RPC complete_quest ใน Postgres แล้ว
+// (แก้ race lost-update — ดู supabase/schema.sql) — logic ใน SQL ต้อง mirror ฟังก์ชันในไฟล์นี้
+// ไฟล์นี้คงไว้เป็น reference/เผื่อใช้ฝั่ง JS อื่น threshold grade ยังมาจาก src/lib/gradeBands.js ที่เดียว
 import { bangkokDateStr, prevDateStr } from './datetime.js';
 // threshold ของแต่ละ grade มาจาก src/lib/gradeBands.js — ไฟล์เดียวที่ frontend (Quest.jsx)
 // ก็ import ด้วย ห้ามฮาร์ดโค้ดตัวเลข A/B/C/D/F ซ้ำที่นี่อีก (จะ sync มือสองที่แล้วเพี้ยนได้)

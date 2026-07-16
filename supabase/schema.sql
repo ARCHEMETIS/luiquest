@@ -252,6 +252,109 @@ $$;
 -- ผู้ใช้ anon/authenticated จะยิง PostgREST /rpc/redeem_referral ตรง ๆ แจก XP เองได้เลย ต้องปิด
 revoke execute on function public.redeem_referral(uuid, uuid, integer) from public, anon, authenticated;
 
+-- Complete quest แบบ atomic ในทีเดียว (scrutinize 2026-07-15 Major 4) — เดิม complete-quest.js
+-- อ่าน total_xp แล้วค่อย update (read-modify-write) ทำ 2 เควสพร้อมกัน/ชน redeem_referral แล้ว
+-- lost update ได้ ตอนนี้ lock แถว profiles + increment ใน transaction เดียวของ Postgres
+-- gating checklist + ownership ยังเช็คฝั่ง complete-quest.js ก่อนเรียก (ต้องอ่าน checklist อยู่แล้ว)
+-- p_grade_bands: ส่ง GRADE_BANDS มาจาก JS — single source of truth คือ src/lib/gradeBands.js
+create or replace function public.complete_quest(
+  p_user_id       uuid,
+  p_quest_id      uuid,
+  p_roadmap_id    uuid,
+  p_xp            integer,
+  p_checked_items jsonb,
+  p_today         date,      -- "วันนี้" ตามเวลาไทย คำนวณฝั่ง JS (bangkokDateStr)
+  p_grade_bands   jsonb,     -- [{grade,min}, ...] เรียงจาก min น้อย→มาก
+  p_metadata      jsonb      -- payload ของ activity_log event quest_complete
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_profile     record;
+  v_existing_xp integer;
+  v_new_streak  integer;
+  v_new_longest integer;
+  v_new_total   integer;
+  v_grade       text;
+begin
+  -- idempotent: unique (user_id, quest_id) — double-submit/race แทรกซ้ำจะ conflict แล้วข้าม
+  insert into public.quest_completions (user_id, quest_id, roadmap_id, xp_earned, checked_items)
+  values (p_user_id, p_quest_id, p_roadmap_id, p_xp, p_checked_items)
+  on conflict (user_id, quest_id) do nothing;
+
+  if not found then
+    -- ทำเควสนี้ไปแล้ว (แทนที่ handler 23505 เดิมใน complete-quest.js) — คืนค่าปัจจุบัน ไม่แจก XP ซ้ำ
+    select xp_earned into v_existing_xp
+    from public.quest_completions
+    where user_id = p_user_id and quest_id = p_quest_id;
+
+    select total_xp, current_streak, longest_streak, grade
+    into v_profile
+    from public.profiles where id = p_user_id;
+
+    return jsonb_build_object(
+      'already_completed', true,
+      'xp_earned', coalesce(v_existing_xp, p_xp),
+      'total_xp', v_profile.total_xp,
+      'current_streak', v_profile.current_streak,
+      'longest_streak', v_profile.longest_streak,
+      'grade', v_profile.grade
+    );
+  end if;
+
+  -- lock แถว profile: ธุรกรรมอื่นที่แตะ total_xp (เควสขนาน/redeem_referral) ต้องรอคิว → ไม่มี lost update
+  select total_xp, current_streak, longest_streak, last_quest_date
+  into v_profile
+  from public.profiles
+  where id = p_user_id
+  for update;
+
+  -- streak logic เดียวกับ _shared/gameplay.js nextStreak (วันเดิม=คงเดิม, เมื่อวาน=+1, อื่น ๆ/null=เริ่ม 1)
+  v_new_streak := case
+    when v_profile.last_quest_date = p_today then v_profile.current_streak
+    when v_profile.last_quest_date = p_today - 1 then v_profile.current_streak + 1
+    else 1
+  end;
+  v_new_longest := greatest(v_profile.longest_streak, v_new_streak);
+
+  -- grade = band ที่ min สูงสุดซึ่ง streak ใหม่ถึง (ตรรกะเดียวกับ computeGrade)
+  select b->>'grade' into v_grade
+  from jsonb_array_elements(p_grade_bands) b
+  where (b->>'min')::integer <= v_new_streak
+  order by (b->>'min')::integer desc
+  limit 1;
+
+  update public.profiles
+  set total_xp        = total_xp + p_xp,
+      current_streak  = v_new_streak,
+      longest_streak  = v_new_longest,
+      last_quest_date = p_today,
+      last_active_at  = now(),
+      grade           = coalesce(v_grade, grade)
+  where id = p_user_id
+  returning total_xp into v_new_total;
+
+  insert into public.activity_log (user_id, event_type, metadata)
+  values (p_user_id, 'quest_complete', p_metadata);
+
+  return jsonb_build_object(
+    'already_completed', false,
+    'xp_earned', p_xp,
+    'total_xp', v_new_total,
+    'current_streak', v_new_streak,
+    'longest_streak', v_new_longest,
+    'grade', coalesce(v_grade, 'F')
+  );
+end;
+$$;
+
+-- ปิด EXECUTE จาก client เหมือน redeem_referral — security definer ไม่เช็คสิทธิ์เอง ถ้าไม่ revoke
+-- anon/authenticated ยิง PostgREST /rpc/complete_quest ตรง ๆ ข้าม gating checklist ได้
+revoke execute on function public.complete_quest(uuid, uuid, uuid, integer, jsonb, date, jsonb, jsonb) from public, anon, authenticated;
+
 create table public.chat_messages (
   id          bigint generated always as identity primary key,
   user_id     uuid not null references public.profiles(id) on delete cascade,
@@ -410,31 +513,29 @@ create policy "topics_write_admin" on public.topics
 create policy "starter_quests_write_admin" on public.starter_quests
   for all to authenticated using (public.is_admin()) with check (public.is_admin());
 
--- roadmaps: เจ้าของ CRUD ของตัวเอง (limit active บังคับด้วย trigger + app logic)
-create policy "roadmaps_all_own" on public.roadmaps
-  for all to authenticated
-  using (auth.uid() = user_id) with check (auth.uid() = user_id);
+-- roadmaps: client อ่านของตัวเองได้อย่างเดียว — write ทุกอย่าง (สร้าง/สลับ active/ลบ) ทำผ่าน
+-- service role ใน Netlify Functions เท่านั้น กัน client insert ตรงข้าม free cap 3 หัวข้อ
+-- (scrutinize 2026-07-15 nit — cap เดิมเช็คแค่ใน questGenerator.js)
+create policy "roadmaps_select_own" on public.roadmaps
+  for select to authenticated
+  using (auth.uid() = user_id);
 
--- phases: ผูกผ่าน roadmap ownership
-create policy "phases_all_own" on public.phases
-  for all to authenticated
-  using (exists (select 1 from public.roadmaps r where r.id = roadmap_id and r.user_id = auth.uid()))
-  with check (exists (select 1 from public.roadmaps r where r.id = roadmap_id and r.user_id = auth.uid()));
+-- phases: อ่านอย่างเดียวผ่าน roadmap ownership — write ผ่าน service role เท่านั้น
+create policy "phases_select_own" on public.phases
+  for select to authenticated
+  using (exists (select 1 from public.roadmaps r where r.id = roadmap_id and r.user_id = auth.uid()));
 
--- daily_quests: อ่าน/แก้เฉพาะเควสใน roadmap ตัวเอง (insert จริงทำโดย service role ตอน pre-generate)
-create policy "daily_quests_all_own" on public.daily_quests
-  for all to authenticated
-  using (exists (select 1 from public.roadmaps r where r.id = roadmap_id and r.user_id = auth.uid()))
-  with check (exists (select 1 from public.roadmaps r where r.id = roadmap_id and r.user_id = auth.uid()));
+-- daily_quests: อ่านเฉพาะเควสใน roadmap ตัวเอง — ห้าม client write เด็ดขาด ไม่งั้นตั้ง
+-- xp_reward เองแล้วปั๊ม XP ได้ (scrutinize 2026-07-15 Blocker 1); insert จริงทำโดย service role
+create policy "daily_quests_select_own" on public.daily_quests
+  for select to authenticated
+  using (exists (select 1 from public.roadmaps r where r.id = roadmap_id and r.user_id = auth.uid()));
 
--- checklist items: ผ่าน quest → roadmap → user
-create policy "checklist_all_own" on public.quest_checklist_items
-  for all to authenticated
+-- checklist items: อ่านอย่างเดียวผ่าน quest → roadmap → user — ห้าม client delete ไม่งั้น
+-- ลบ checklist เพื่อข้าม gating ใน complete-quest ได้ (scrutinize 2026-07-15 Blocker 2)
+create policy "checklist_select_own" on public.quest_checklist_items
+  for select to authenticated
   using (exists (
-    select 1 from public.daily_quests q
-    join public.roadmaps r on r.id = q.roadmap_id
-    where q.id = quest_id and r.user_id = auth.uid()))
-  with check (exists (
     select 1 from public.daily_quests q
     join public.roadmaps r on r.id = q.roadmap_id
     where q.id = quest_id and r.user_id = auth.uid()));
@@ -442,9 +543,8 @@ create policy "checklist_all_own" on public.quest_checklist_items
 create policy "completions_select_own" on public.quest_completions
   for select to authenticated using (auth.uid() = user_id);
 
-create policy "completions_insert_own" on public.quest_completions
-  for insert to authenticated with check (auth.uid() = user_id);
--- ไม่มี update/delete policy → ทำเควสเสร็จแล้วแก้ประวัติไม่ได้ (metric สะอาด)
+-- ไม่มี insert/update/delete policy → insert ทำผ่าน service role (RPC complete_quest) เท่านั้น
+-- กัน client เสก activated_total/quests_completed_total ปลอม (scrutinize 2026-07-15 Major 3)
 
 create policy "referrals_select_involved" on public.referrals
   for select to authenticated
@@ -476,8 +576,8 @@ create policy "payments_update_admin" on public.payments
   for update to authenticated
   using (public.is_admin()) with check (public.is_admin());
 
-create policy "activity_insert_own" on public.activity_log
-  for insert to authenticated with check (auth.uid() = user_id);
+-- ไม่มี insert policy ฝั่ง client → activity_log เขียนผ่าน service role เท่านั้น
+-- กันปลอม DAU/metric จาก anon key (scrutinize 2026-07-15 Major 3)
 create policy "activity_select_own_or_admin" on public.activity_log
   for select to authenticated using (auth.uid() = user_id or public.is_admin());
 

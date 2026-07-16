@@ -45,10 +45,11 @@ function parseRateLimit(bodyText) {
 
 async function callGeminiOnce(model, { contents, systemInstruction, generationConfig }) {
   const res = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${GEMINI_API_KEY}`,
+    `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`,
     {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      // ส่ง key ผ่าน header แทน query string — กัน key หลุดไป log/URL history (nit จากรีวิว 15 ก.ค.)
+      headers: { 'Content-Type': 'application/json', 'x-goog-api-key': GEMINI_API_KEY },
       body: JSON.stringify({
         ...(systemInstruction ? { systemInstruction: { parts: [{ text: systemInstruction }] } } : {}),
         contents,
@@ -70,12 +71,14 @@ async function callGeminiOnce(model, { contents, systemInstruction, generationCo
 // 429 per-day (RPD) หรือ non-2xx อื่น ๆ ข้ามไปโมเดลถัดไปทันที ไม่ retry; extractFn ล้มเหลว (เช่น parse JSON พัง)
 // ก็ถือเป็นความล้มเหลวของโมเดลนั้น ข้ามไปโมเดลถัดไปเช่นกัน (ไม่ retry โมเดลเดิมซ้ำ)
 // ถ้าลอง "ทุกโมเดลในchain" หมดแล้วยังไม่สำเร็จ -> throw error ที่มี .exhausted = true ให้ caller ไป trigger fallback เอง
+// requestBody เป็น object ตรง ๆ หรือ function (model) => body สำหรับ config ที่ต่างกันตามรุ่นโมเดล (เช่น thinkingConfig)
 async function tryChain(chain, requestBody, extractFn) {
   let lastErr;
   for (const model of chain) {
+    const body = typeof requestBody === 'function' ? requestBody(model) : requestBody;
     for (let attempt = 1; attempt <= 2; attempt++) {
       try {
-        const data = await callGeminiOnce(model, requestBody);
+        const data = await callGeminiOnce(model, body);
         try {
           return extractFn(data);
         } catch (parseErr) {
@@ -102,6 +105,16 @@ async function tryChain(chain, requestBody, extractFn) {
   throw exhausted;
 }
 
+// ปิด/หรี่ thinking สำหรับงานแชท (Medium 6 รีวิว 15 ก.ค.): thinking token นับรวมใน maxOutputTokens
+// ถ้าไม่ปิด budget 800 จะหมดไปกับ thinking ก่อนได้ text จริง -> response ว่าง -> tryChain ข้ามโมเดลทั้งที่โควต้าเหลือ
+// syntax ต่างตามรุ่น (ห้ามส่งสอง field พร้อมกัน — API ตอบ 400):
+//   Gemini 3  -> thinkingLevel: 'minimal' (Flash รองรับ; ปิดสนิทไม่ได้ แต่คิดน้อยสุด)
+//   Gemini 2.5 -> thinkingBudget: 0 (ปิดสนิท; flash-lite ปิดอยู่แล้วโดย default แต่ระบุชัดไว้กันพลาด)
+// หมายเหตุ: ใช้เฉพาะ chat chain เท่านั้น — quest/roadmap (generateJSON) ไม่จำกัด maxOutputTokens และต้องการ reasoning เต็ม ห้ามเอาไปใส่
+function minimalThinkingConfig(model) {
+  return model.startsWith('gemini-3') ? { thinkingLevel: 'minimal' } : { thinkingBudget: 0 };
+}
+
 // ---------- generateText: ข้อความล้วน (ใช้กับแชท) ----------
 // history (ถ้ามี) = [{ role: 'user' | 'model', text }] เรียงเก่า -> ใหม่ ต่อท้ายด้วย prompt เป็นข้อความล่าสุด
 export async function generateText({ prompt, systemInstruction, chain = CHAT_MODEL_CHAIN, temperature = 0.7, history = [] }) {
@@ -114,7 +127,11 @@ export async function generateText({ prompt, systemInstruction, chain = CHAT_MOD
 
   return tryChain(
     chain,
-    { contents, systemInstruction, generationConfig: { temperature, maxOutputTokens: 800 } },
+    (model) => ({
+      contents,
+      systemInstruction,
+      generationConfig: { temperature, maxOutputTokens: 800, thinkingConfig: minimalThinkingConfig(model) },
+    }),
     (data) => {
       const text = data?.candidates?.[0]?.content?.parts
         ?.map((p) => p.text)

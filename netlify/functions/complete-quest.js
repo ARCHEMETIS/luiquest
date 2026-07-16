@@ -3,7 +3,8 @@
 import { requireUser, unauthorized, json } from './_shared/auth.js';
 import { getAdminClient } from './_shared/supabaseAdmin.js';
 import { bangkokDateStr, startOfBangkokDayISO } from './_shared/datetime.js';
-import { nextStreak, computeGrade } from './_shared/gameplay.js';
+// GRADE_BANDS ส่งเข้า RPC complete_quest — single source of truth เดิม (streak/grade คำนวณใน SQL แล้ว)
+import { GRADE_BANDS } from '../../src/lib/gradeBands.js';
 
 export default async (req) => {
   if (req.method !== 'POST') return json(405, { error: 'Method Not Allowed' });
@@ -53,70 +54,27 @@ export default async (req) => {
     return json(400, { error: 'ติ๊ก checklist ให้ครบทุกข้อก่อนถึงจะได้ XP' });
   }
 
-  const { error: completeErr } = await admin.from('quest_completions').insert({
-    user_id: user.id,
-    quest_id: questId,
-    roadmap_id: quest.roadmap_id,
-    xp_earned: quest.xp_reward,
-    checked_items: [...checkedIds],
+  // insert completion + XP/streak/grade + activity_log ทำ atomic ใน RPC เดียว (Postgres lock
+  // แถว profiles) — เดิม read-modify-write ฝั่ง JS ทำ 2 เควสพร้อมกัน/ชน redeem_referral แล้ว
+  // XP หายได้ (scrutinize 2026-07-15 Major 4); RPC จัดการ double-submit (unique conflict) เองด้วย
+  const { data: result, error: rpcErr } = await admin.rpc('complete_quest', {
+    p_user_id: user.id,
+    p_quest_id: questId,
+    p_roadmap_id: quest.roadmap_id,
+    p_xp: quest.xp_reward,
+    p_checked_items: [...checkedIds],
+    p_today: bangkokDateStr(),
+    p_grade_bands: GRADE_BANDS,
+    p_metadata: { quest_id: questId, roadmap_id: quest.roadmap_id, xp_earned: quest.xp_reward, day_start: startOfBangkokDayISO() },
   });
-  if (completeErr) {
-    // race: อีก request คู่ขนาน (double-submit) แทรกไปก่อนแล้ว — ถือว่าสำเร็จโดยคำขอนั้น ไม่ใช่ error จริง
-    if (completeErr.code === '23505') {
-      const { data: profile } = await admin
-        .from('profiles')
-        .select('total_xp, current_streak, longest_streak, grade')
-        .eq('id', user.id)
-        .single();
-      return json(200, { alreadyCompleted: true, xp_earned: quest.xp_reward, ...profile });
-    }
-    return json(500, { error: completeErr.message });
-  }
-
-  const { data: profile, error: profileErr } = await admin
-    .from('profiles')
-    .select('total_xp, current_streak, longest_streak, last_quest_date')
-    .eq('id', user.id)
-    .single();
-  if (profileErr) return json(500, { error: profileErr.message });
-
-  const todayStr = bangkokDateStr();
-  const streakChange = nextStreak({ lastQuestDate: profile.last_quest_date, todayStr });
-  const currentStreak =
-    streakChange === null
-      ? profile.current_streak
-      : streakChange === 'increment'
-      ? profile.current_streak + 1
-      : 1;
-  const longestStreak = Math.max(profile.longest_streak, currentStreak);
-  const grade = computeGrade(currentStreak);
-  const totalXp = profile.total_xp + quest.xp_reward;
-
-  const { error: updateErr } = await admin
-    .from('profiles')
-    .update({
-      total_xp: totalXp,
-      current_streak: currentStreak,
-      longest_streak: longestStreak,
-      last_quest_date: todayStr,
-      last_active_at: new Date().toISOString(),
-      grade,
-    })
-    .eq('id', user.id);
-  if (updateErr) return json(500, { error: updateErr.message });
-
-  await admin.from('activity_log').insert({
-    user_id: user.id,
-    event_type: 'quest_complete',
-    metadata: { quest_id: questId, roadmap_id: quest.roadmap_id, xp_earned: quest.xp_reward, day_start: startOfBangkokDayISO() },
-  });
+  if (rpcErr) return json(500, { error: rpcErr.message });
 
   return json(200, {
-    alreadyCompleted: false,
-    xp_earned: quest.xp_reward,
-    total_xp: totalXp,
-    current_streak: currentStreak,
-    longest_streak: longestStreak,
-    grade,
+    alreadyCompleted: result.already_completed,
+    xp_earned: result.xp_earned,
+    total_xp: result.total_xp,
+    current_streak: result.current_streak,
+    longest_streak: result.longest_streak,
+    grade: result.grade,
   });
 };
