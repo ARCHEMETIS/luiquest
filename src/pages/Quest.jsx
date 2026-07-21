@@ -69,6 +69,8 @@ export default function Quest() {
         setQuest(data.quest);
         setChecklist(data.checklist ?? []);
         setApiStatus('ready');
+      } else if (data.status === 'done_today') {
+        setApiStatus('done_today'); // ทำเควสครบวันนี้แล้ว → หน้า "พักได้" ไม่ใช่ "ปั่นไม่ทัน"
       } else {
         setApiStatus('not_ready');
       }
@@ -112,13 +114,15 @@ export default function Quest() {
   const status =
     apiStatus === 'loading'
       ? 'loading'
-      : apiStatus === 'not_ready'
-        ? 'notready'
-        : !profile.last_quest_date
-          ? 'day1'
-          : streakBroken
-            ? 'broken'
-            : 'ready';
+      : apiStatus === 'done_today'
+        ? 'restday'
+        : apiStatus === 'not_ready'
+          ? 'notready'
+          : !profile.last_quest_date
+            ? 'day1'
+            : streakBroken
+              ? 'broken'
+              : 'ready';
 
   const grade = gradeProgress(effectiveStreak);
   const stats = {

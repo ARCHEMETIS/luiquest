@@ -394,6 +394,32 @@ export default function DailyQuestPage({
         </main>
       )}
 
+      {effectiveUi === "restday" && (
+        /* ---------- ทำเควสครบของวันนี้แล้ว (กลับมาดูซ้ำ ไม่ใช่เพิ่งเคลม) — พักได้ ไม่ใช่ "ยังไม่พร้อม/ลองใหม่" ---------- */
+        <main className="mx-auto flex w-full max-w-md flex-1 flex-col items-center justify-center px-8 pb-12 text-center md:max-w-lg">
+          <GhostMascot mood="celebrate" className="mb-5 scale-110" />
+          <h1 className="font-heading text-xl font-bold">เควสวันนี้จบแล้ว! 🎉</h1>
+          <p className="mt-1.5 text-sm text-[#9D5C7C]">
+            streak <span className="font-bold text-[#831843]">{effectiveStats.streak} วันติด</span> 🔥 — เก่งมาก พักได้เต็มที่วันนี้
+          </p>
+          <div className="mt-6 flex w-full max-w-[280px] flex-col gap-2.5">
+            <button
+              onClick={() => onShareStreak?.()}
+              className="w-full rounded-full bg-gradient-to-r from-violet-500 to-pink-500 px-4 py-2.5 font-heading text-sm font-bold text-white shadow-[0_10px_24px_rgba(139,92,246,.30)] transition hover:-translate-y-0.5 hover:shadow-[0_14px_30px_rgba(139,92,246,.42)] hover:brightness-105 active:translate-y-px"
+            >
+              แชร์การ์ด streak 🔥
+            </button>
+            <button
+              onClick={() => onInvite?.()}
+              className="w-full rounded-full border-2 border-[#FBCFE8] bg-white/80 px-4 py-2.5 font-heading text-sm font-bold text-[#831843] transition hover:border-[#8B5CF6]/50 hover:text-[#8B5CF6] active:translate-y-px"
+            >
+              ชวนเพื่อนมาลุยด้วยกัน
+            </button>
+          </div>
+          <p className="mt-4 text-[11px] text-[#9D5C7C]/80">เควสใหม่มาตอนตี 5 ของพรุ่งนี้ — เจอกันใหม่!</p>
+        </main>
+      )}
+
       {isQuestState && (
         /* ---------- หน้าเควสหลัก (ready / broken / day1 ต่างกันที่ banner + ตัวเลข) ---------- */
         <main className={`mx-auto flex w-full max-w-md flex-1 flex-col px-6 pb-24 md:max-w-xl ${showStateToggle ? "pt-14" : "pt-6"}`}>

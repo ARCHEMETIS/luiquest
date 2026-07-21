@@ -59,18 +59,25 @@ export default async (req) => {
     const doneToday =
       latestDone?.completed_at && bangkokDateStr(new Date(latestDone.completed_at)) === bangkokDateStr();
 
-    if (doneToday || !latestQuest || roadmap.status !== 'ready') {
-      // จบเควสวันนี้ไปแล้ว = เจตนา 1 เควส/วัน ไม่ generate ล่วงหน้าให้ binge — cron รายคืนเตรียมของพรุ่งนี้เอง
+    // จบเควสวันนี้ไปแล้ว = เจตนา 1 เควส/วัน ไม่ generate ล่วงหน้าให้ binge — cron รายคืนเตรียมของพรุ่งนี้เอง
+    // แยก status 'done_today' ออกจาก 'not_ready' ให้ frontend โชว์ "จบวันนี้แล้ว พักได้" (บวก) ไม่ใช่ "ปั่นไม่ทัน ลองใหม่" (error)
+    if (doneToday) {
+      return json(200, {
+        status: 'done_today',
+        roadmap,
+        quest: null,
+        // roadmap ที่พักไว้ไม่เข้า cron — อย่าสัญญาว่า "พรุ่งนี้มีเควสใหม่" เพราะจะไม่มีจนกว่าจะสลับกลับมา
+        message: roadmap.is_active
+          ? 'เควสวันนี้จบแล้ว เก่งมาก! พรุ่งนี้เช้ามีเควสใหม่รอ'
+          : 'เควสล่าสุดของหัวข้อนี้จบแล้ว — หัวข้อถูกพักไว้ สลับกลับมาลุยเมื่อไหร่เควสใหม่จะถูกเตรียมให้',
+      });
+    }
+    if (!latestQuest || roadmap.status !== 'ready') {
       return json(200, {
         status: 'not_ready',
         roadmap,
         quest: null,
-        // roadmap ที่พักไว้ไม่เข้า cron — อย่าสัญญาว่า "พรุ่งนี้มีเควสใหม่" เพราะจะไม่มีจนกว่าจะสลับกลับมา
-        message: doneToday
-          ? roadmap.is_active
-            ? 'เควสวันนี้จบแล้ว เก่งมาก! พรุ่งนี้เช้ามีเควสใหม่รอ'
-            : 'เควสล่าสุดของหัวข้อนี้จบแล้ว — หัวข้อถูกพักไว้ สลับกลับมาลุยเมื่อไหร่เควสใหม่จะถูกเตรียมให้'
-          : 'กำลังเตรียมเควสถัดไป ลองรีเฟรชอีกครั้งเร็ว ๆ นี้',
+        message: 'กำลังเตรียมเควสถัดไป ลองรีเฟรชอีกครั้งเร็ว ๆ นี้',
       });
     }
 

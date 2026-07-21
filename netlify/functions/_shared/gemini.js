@@ -14,10 +14,13 @@ function env(name) {
 
 const GEMINI_API_KEY = env('GEMINI_API_KEY');
 
-// แบ่งงานตามโมเดล (#03/#07): งานหนัก (roadmap/เควส) ใช้ 3-flash เป็นหลัก, แชทใช้ flash-lite เป็นหลัก (ถังโควต้าแยกกัน)
-// 2.5-flash เป็น last-resort fallback ท้ายสุดของทั้งสอง chain (spec เรียก "เลิกใช้เป็นตัวหลัก" — RPD ต่ำสุด)
-export const QUEST_MODEL_CHAIN = ['gemini-3-flash-preview', 'gemini-2.5-flash-lite', 'gemini-2.5-flash'];
-export const CHAT_MODEL_CHAIN = ['gemini-2.5-flash-lite', 'gemini-3-flash-preview', 'gemini-2.5-flash'];
+// แบ่งงานตามโมเดล (#03/#07): งานหนัก (roadmap/เควส) กับแชท ใช้คนละตัวหลัก (ถังโควต้าแยกกัน)
+// อัพเดต 21 ก.ค. 2026: gemini-3-flash-preview (preview) ตอบช้า/hang เป็นบางครั้ง ชนกับ netlify timeout 10s
+//   → generate เควส on-demand ล้ม (หน้าเควสขึ้น "ไม่พร้อม"). สลับมาใช้โมเดล GA ที่ verify แล้ว 200 + เร็ว (<3s)
+//   ผ่าน AI Studio จริง: 2.5-flash (quest) / 2.5-flash-lite (chat) + fallback สลับกัน (ถัง 2.5-flash-lite แยกจาก quest)
+//   มี GA ใหม่กว่า (gemini-3.5-flash, gemini-3.1-flash-lite) ให้ upgrade ทีหลังได้เมื่อยืนยัน thinkingConfig ผ่าน
+export const QUEST_MODEL_CHAIN = ['gemini-2.5-flash', 'gemini-2.5-flash-lite'];
+export const CHAT_MODEL_CHAIN = ['gemini-2.5-flash-lite', 'gemini-2.5-flash'];
 
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
