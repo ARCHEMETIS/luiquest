@@ -179,7 +179,7 @@ function GrowthChart({ values, trend = false, delay = 0 }) {
 
   const trendValues = trend ? extrapolateTrend(values, 4) : [];
   const combined = [...values, ...trendValues];
-  const max = Math.max(...combined);
+  const max = Math.max(...combined, 1); // กันหารศูนย์ถ้าทุกจุดเป็น 0 (แอพเพิ่งเปิด ยังไม่มีผู้ใช้)
   const step = CHART_INNER_W / (combined.length - 1);
   const toY = (v) => CHART_PAD_TOP + (1 - v / max) * CHART_INNER_H;
   const points = combined.map((v, i) => [CHART_PAD_X + i * step, toY(v)]);
@@ -286,15 +286,16 @@ export default function StatsPage({ stats, growth, loading = false, error = null
         avgStreak: Math.round(stats.avg_active_streak ?? 0),
         growth: (() => {
           const vals = (growth ?? []).map((g) => Number(g.cumulative_users) || 0);
-          return vals.length >= 2 ? vals : [0, Math.max(signups, 1)]; // GrowthChart ต้องมี ≥2 จุด กันหารศูนย์ตอนข้อมูลวันแรกยังน้อย
+          return vals.length >= 2 ? vals : [0, signups]; // ต้องมี ≥2 จุด (GrowthChart กันหารศูนย์เองด้วย Math.max(...,1) ตอน scaling) — ค่าจริง ไม่ปั้น
         })(),
       }
     : null;
 
-  // ตัวเลขที่ "ขยับสด" ได้จริงในโลกจริง (ผู้ใช้/เควสสำเร็จ) ให้ขยับเบา ๆ ต่อเนื่อง — สถิติที่นิ่งกว่า (streak สูงสุด/เฉลี่ย) ปล่อยนิ่งไว้ตามเดิม
-  const liveActiveUsers = useLiveTick(data?.activeUsers ?? 0, !isLoading, [1, 2], [4000, 7000]);
-  const liveTotalSignups = useLiveTick(data?.totalSignups ?? 0, !isLoading, [1, 3], [3500, 6500]);
-  const liveQuestsCompleted = useLiveTick(data?.questsCompleted ?? 0, !isLoading, [2, 6], [2500, 5000]);
+  // หน้า proof สาธารณะ (อาจารย์/คนนอกดู) ต้องเป็นเลขจริงล้วน — ไม่สุ่มเพิ่มปลอมแบบ useLiveTick (เลี่ยงเลขวิ่งเองจนดูปั้น + activePct ทะลุ 100%)
+  // CountUp ยังวิ่งจาก 0 ตอนโผล่จอให้ดูมีชีวิต แต่ค่าปลายทาง = ค่าจริงจาก view เท่านั้น
+  const liveActiveUsers = data?.activeUsers ?? 0;
+  const liveTotalSignups = data?.totalSignups ?? 0;
+  const liveQuestsCompleted = data?.questsCompleted ?? 0;
   const activePct = data && liveTotalSignups > 0 ? Math.round((liveActiveUsers / liveTotalSignups) * 100) : 0;
 
   return (
@@ -336,6 +337,12 @@ export default function StatsPage({ stats, growth, loading = false, error = null
             <Skeleton className="h-20" />
           </div>
           <Skeleton className="h-44" />
+        </main>
+      ) : !data ? (
+        /* public_stats โหลดไม่สำเร็จ (RLS/network) — โชว์ข้อความแทน crash ตอน render data.growth */
+        <main className={`mx-auto flex w-full max-w-md flex-1 flex-col items-center justify-center gap-2 px-6 pb-10 text-center md:max-w-xl ${showStateToggle ? "pt-14" : "pt-6"}`}>
+          <p className="font-heading text-sm font-bold text-[#9D5C7C]">โหลดสถิติไม่สำเร็จ 😢</p>
+          <p className="text-xs text-[#9D5C7C]">ลองรีเฟรชหน้านี้อีกครั้งนะ</p>
         </main>
       ) : (
         <main key={early ? "early" : "ready"} className={`mx-auto flex w-full max-w-md flex-1 flex-col gap-6 px-6 pb-10 md:max-w-xl ${showStateToggle ? "pt-14" : "pt-6"}`}>

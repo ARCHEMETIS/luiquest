@@ -192,7 +192,7 @@ export default function ProfileDrawer({ open, onClose, showStateToggle = false }
 
   // นับจำนวนเพื่อนที่สมัครผ่านลิงก์เรา — RLS ให้ referrer อ่าน referrals ของตัวเองได้ (ชื่อเพื่อนอ่านไม่ได้ โชว์แค่จำนวน)
   useEffect(() => {
-    if (!mounted || !session?.user?.id) return;
+    if (!isOpen || !session?.user?.id) return; // ผูกกับ isOpen ไม่ใช่ mounted — เปิดใหม่ในช่วง exit-anim (mounted ยัง true) จะได้ count สด
     let cancelled = false;
     (async () => {
       const { count } = await supabase
@@ -204,13 +204,14 @@ export default function ProfileDrawer({ open, onClose, showStateToggle = false }
     return () => {
       cancelled = true;
     };
-  }, [mounted, session?.user?.id]);
+  }, [isOpen, session?.user?.id]);
 
   const [switchingId, setSwitchingId] = useState(null);
   const [switchMsg, setSwitchMsg] = useState("");
   const [copied, setCopied] = useState(false);
   const [shareMsg, setShareMsg] = useState("");
   const timers = useRef({});
+  const switchingRef = useRef(false); // guard แบบ synchronous กัน double-tap สลับหัวข้อสองอันเร็ว ๆ (state switchingId อัพเดตช้าไป 1 render)
 
   useEffect(() => () => Object.values(timers.current).forEach(clearTimeout), []);
 
@@ -224,7 +225,8 @@ export default function ProfileDrawer({ open, onClose, showStateToggle = false }
 
   // สลับหัวข้อ active จริงผ่าน service-role function แล้ว refetch โปรไฟล์ (progress หัวข้อเดิมไม่หาย)
   const selectTopic = async (roadmapId) => {
-    if (roadmapId === activeTopicId || switchingId || !token) return;
+    if (roadmapId === activeTopicId || switchingRef.current || !token) return;
+    switchingRef.current = true; // ล็อกทันที (sync) กันคลิกอันที่สองแทรกก่อน setSwitchingId จะ re-render
     const target = preset.topics.find((t) => t.id === roadmapId);
     setSwitchingId(roadmapId);
     try {
@@ -235,6 +237,7 @@ export default function ProfileDrawer({ open, onClose, showStateToggle = false }
       flash("switch", setSwitchMsg, "สลับหัวข้อไม่สำเร็จ ลองใหม่อีกครั้ง");
     } finally {
       setSwitchingId(null);
+      switchingRef.current = false;
     }
   };
 

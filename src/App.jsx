@@ -94,13 +94,20 @@ function InviteRedeemer() {
     (async () => {
       try {
         await api.redeemReferral(code, token);
+        localStorage.removeItem('luiquest_pending_invite'); // สำเร็จ — เคลียร์
         await refetch();
         setSuccess(true);
         setTimeout(() => setSuccess(false), 2800);
-      } catch {
-        // Invalid, expired, self, and already-used links intentionally stay quiet.
-      } finally {
-        localStorage.removeItem('luiquest_pending_invite');
+      } catch (err) {
+        // 4xx = terminal (ถูกชวนแล้ว/ชวนตัวเอง/บัญชีเก่าเกิน 7 วัน/โค้ดไม่มีจริง) → เคลียร์ทิ้ง ใช้ไม่ได้อยู่แล้ว เงียบ ๆ
+        // 5xx / network (ไม่มี status) = ชั่วคราว → เก็บ code ไว้ + ปลดจาก attempted ให้ลองใหม่รอบหน้า
+        // (กันลิงก์ชวนหายเพราะเน็ตสะดุดตอน redeem — referral คือ metric ที่วิชานี้เอาไปวัด)
+        const status = err?.status;
+        if (status >= 400 && status < 500) {
+          localStorage.removeItem('luiquest_pending_invite');
+        } else {
+          attempted.current.delete(code);
+        }
       }
     })();
   }, [session?.access_token, refetch, location.key]);

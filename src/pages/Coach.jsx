@@ -25,6 +25,7 @@ export default function Coach() {
     activeRoadmapId: roadmapId,
     loading: profileLoading,
     error: profileError,
+    refetch: refetchProfile,
   } = useProfile();
   const navigate = useNavigate();
   const token = session?.access_token;
@@ -81,6 +82,20 @@ export default function Coach() {
     }
   };
 
+  // /me ล้มเหลว (network/500) — โชว์ปุ่มลองใหม่แทนจอขาวถาวร (เดิม return null ค้างเพราะ activeRoadmap เป็น null ตลอด)
+  if (profileError && !profile) {
+    return (
+      <div className="flex h-full flex-col items-center justify-center gap-3 px-8 text-center font-body text-[#831843]">
+        <p className="text-sm font-bold">โหลดข้อมูลไม่สำเร็จ 😢</p>
+        <button
+          onClick={refetchProfile}
+          className="rounded-full bg-gradient-to-r from-violet-500 to-pink-500 px-5 py-2 text-sm font-bold text-white shadow-[0_8px_18px_rgba(139,92,246,.28)] transition hover:-translate-y-0.5 active:translate-y-px"
+        >
+          ลองใหม่
+        </button>
+      </div>
+    );
+  }
   if (profileLoading || !activeRoadmap || !ready) return null;
 
   return (

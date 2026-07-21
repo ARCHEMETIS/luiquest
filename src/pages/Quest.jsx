@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import DailyQuestPage from '../components/DailyQuestPage.jsx';
 import StreakCardPage from '../components/StreakCardPage.jsx';
@@ -54,12 +54,17 @@ export default function Quest() {
   const [claiming, setClaiming] = useState(false);
   const [claimError, setClaimError] = useState(null);
   const [showStreakCard, setShowStreakCard] = useState(false);
+  // กัน response เก่าแซง: ถ้าสลับหัวข้อ (roadmapId เปลี่ยน) ระหว่างโหลด เควสของหัวข้อเก่าที่ตอบช้ากว่าต้องถูกทิ้ง
+  // ไม่งั้นหน้าโชว์ชื่อหัวข้อใหม่แต่เนื้อเควส/quest.id เป็นของเก่า → เคลมผิดเควส
+  const latestReq = useRef(null);
 
   const loadQuest = useCallback(async () => {
     if (!token || !roadmapId) return;
+    latestReq.current = roadmapId;
     setApiStatus('loading');
     try {
       const data = await api.questToday(token, roadmapId);
+      if (latestReq.current !== roadmapId) return; // มีหัวข้อใหม่แซงมาแล้ว ทิ้ง response นี้
       if (data.status === 'ready') {
         setQuest(data.quest);
         setChecklist(data.checklist ?? []);
@@ -68,6 +73,7 @@ export default function Quest() {
         setApiStatus('not_ready');
       }
     } catch {
+      if (latestReq.current !== roadmapId) return;
       setApiStatus('not_ready');
     }
   }, [token, roadmapId]);
