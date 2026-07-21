@@ -1,5 +1,5 @@
-const SwordMark = ({ className = "" }) => (
-  <svg viewBox="0 0 40 40" fill="none" className={className}>
+const SwordMark = ({ className = "", style }) => (
+  <svg viewBox="0 0 40 40" fill="none" className={className} style={style}>
     <g transform="rotate(45 20 20)">
       <polygon points="20,3 23,10 23,26 17,26 17,10" fill="#fff" />
       <rect x="13" y="25" width="14" height="3" rx="1" fill="#fff" />
@@ -24,11 +24,14 @@ export const LuiQuestWordmark = ({ className = "" }) => (
   </div>
 );
 
-export const LuiQuestFavicon = ({ className = "" }) => (
+// size ปรับได้ตั้งแต่ ticket #10 (app shell — ต้องย่อลงมาใส่ใน header bar) — ค่าเดิม 44px เป็น default ไม่กระทบจุดที่เรียกอยู่แล้ว (LoginPage/StreakCardPage/StatsPage)
+export const LuiQuestFavicon = ({ className = "", size = 44 }) => (
   <div
-    className={`inline-flex items-center justify-center w-11 h-11 rounded-xl bg-gradient-to-br from-violet-500 to-pink-400 ${className}`}
+    className={`inline-flex items-center justify-center rounded-xl bg-gradient-to-br from-violet-500 to-pink-400 ${className}`}
+    style={{ width: size, height: size }}
   >
-    <SwordMark className="w-[26px] h-[26px]" />
+    {/* 0.591 = สัดส่วนดาบ 26px ต่อกล่อง 44px เดิม (26/44) — คงสัดส่วนเดียวกันไว้ทุกขนาด */}
+    <SwordMark style={{ width: size * 0.591, height: size * 0.591 }} />
   </div>
 );
 
