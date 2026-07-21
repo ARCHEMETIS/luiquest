@@ -7,18 +7,8 @@ import { useEffect, useRef, useState } from "react";
 import GhostMascot from "./GhostMascot";
 import { LuiQuestFavicon } from "./LuiQuestLogo";
 
-const MOCK = {
-  user: { name: "พิมพ์ชนก รักเรียน", initial: "พ" },
-  streak: { days: 7 },
-  zero: { xp: 1250 },
-  inviteLink: "luiquest.app/invite/pimchanok88",
-  tagline: "อยากเก่งอะไร ลุยเลย — วันละเควส",
-};
-
-const PREVIEW_STATES = [
-  { id: "streak", label: "มี streak" },
-  { id: "zero", label: "streak ขาด" },
-];
+// tagline แบรนด์ประจำการ์ด (ข้อมูลผู้ใช้จริง — streak/xp/ชื่อ/ลิงก์ชวน — มาจาก props)
+const DEFAULT_TAGLINE = "อยากเก่งอะไร ลุยเลย — วันละเควส";
 
 const SHARE_CHANNELS = [
   { id: "line", label: "LINE", className: "bg-[#06C755] text-white" },
@@ -120,7 +110,7 @@ function useCardTilt() {
   return { cardRef, tilt, needsPermission, requestTilt };
 }
 
-function ShareCard({ ui }) {
+function ShareCard({ ui, streakDays, xp, userName, initial, referralLink, tagline }) {
   const isStreak = ui === "streak";
   const { cardRef, tilt, needsPermission, requestTilt } = useCardTilt();
 
@@ -205,7 +195,7 @@ function ShareCard({ ui }) {
                 className="font-heading text-6xl font-bold leading-none text-white"
                 style={{ textShadow: "3px 3px 0 rgba(76,29,149,.55)" }}
               >
-                {MOCK.streak.days}
+                {streakDays}
               </p>
               <p className="mt-1 font-heading text-sm font-bold text-white" style={{ textShadow: "1.5px 1.5px 0 rgba(76,29,149,.4)" }}>
                 วันติดต่อกัน 🔥
@@ -218,7 +208,7 @@ function ShareCard({ ui }) {
                 className="font-heading text-4xl font-bold leading-none text-white"
                 style={{ textShadow: "3px 3px 0 rgba(76,29,149,.55)" }}
               >
-                {MOCK.zero.xp.toLocaleString()}
+                {(xp ?? 0).toLocaleString()}
               </p>
               <p className="mt-1 font-heading text-sm font-bold text-white" style={{ textShadow: "1.5px 1.5px 0 rgba(76,29,149,.4)" }}>
                 XP สะสมทั้งหมด ✨
@@ -232,20 +222,32 @@ function ShareCard({ ui }) {
         <div className="w-full rounded-xl bg-white/90 px-2.5 py-2 backdrop-blur-sm">
           <div className="flex items-center gap-1.5">
             <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-violet-500 to-pink-400 font-heading text-[10px] font-bold text-white">
-              {MOCK.user.initial}
+              {initial}
             </span>
-            <span className="min-w-0 flex-1 truncate text-left text-[10px] font-bold text-[#831843]">{MOCK.user.name}</span>
+            <span className="min-w-0 flex-1 truncate text-left text-[10px] font-bold text-[#831843]">{userName}</span>
           </div>
-          <p className="mt-1 text-[8px] leading-tight text-[#9D5C7C]">{MOCK.tagline}</p>
-          <p className="mt-0.5 truncate text-[8px] font-bold text-[#8B5CF6]">{MOCK.inviteLink}</p>
+          <p className="mt-1 text-[8px] leading-tight text-[#9D5C7C]">{tagline}</p>
+          <p className="mt-0.5 truncate text-[8px] font-bold text-[#8B5CF6]">{(referralLink || "").replace(/^https?:\/\//, "")}</p>
         </div>
       </div>
     </div>
   );
 }
 
-export default function StreakCardPage({ initialState = "streak", onBack, onSaveImage, onShare, showStateToggle = true }) {
-  const [ui, setUi] = useState(initialState);
+export default function StreakCardPage({
+  streak = 0,
+  totalXp = 0,
+  userName = "",
+  referralLink = "",
+  tagline = DEFAULT_TAGLINE,
+  onBack,
+  onSaveImage,
+  onShare,
+  showStateToggle = false,
+}) {
+  // streak > 0 = การ์ดอวด streak, ไม่งั้นสลับไปอวด XP รวม (ไม่โชว์เลข 0) — ตาม state เดิม streak/zero
+  const ui = streak > 0 ? "streak" : "zero";
+  const initial = (userName || "?").trim().charAt(0).toUpperCase() || "?";
   const [saveMsg, setSaveMsg] = useState("");
   const [shareMsg, setShareMsg] = useState("");
   const timers = useRef({});
@@ -260,12 +262,19 @@ export default function StreakCardPage({ initialState = "streak", onBack, onSave
 
   const saveImage = () => {
     onSaveImage?.();
-    flash("save", setSaveMsg, "บันทึกภาพลงเครื่องแล้ว 📸 ไปโพสต์ได้เลย");
+    // ยังไม่ render เป็นไฟล์ภาพจริง (ไม่พึ่ง lib) — บอกวิธีเซฟที่ใช้ได้จริงบนมือถือแทนการหลอกว่าเซฟแล้ว
+    flash("save", setSaveMsg, "กดค้างที่การ์ดเพื่อเซฟรูป แล้วเอาไปโพสต์ได้เลย 📸", 3200);
   };
 
   const share = (channel) => {
-    onShare?.(channel);
-    flash("share", setShareMsg, `เปิดหน้าต่างแชร์ผ่าน ${channel.label} ให้แล้ว`);
+    if (navigator.share) {
+      onShare?.(channel);
+      flash("share", setShareMsg, "เปิดหน้าต่างแชร์ให้แล้ว");
+    } else {
+      // เดสก์ท็อปไม่มี Web Share — คัดลอกลิงก์ชวนให้จริง
+      navigator.clipboard?.writeText(referralLink).catch(() => {});
+      flash("share", setShareMsg, `คัดลอกลิงก์ชวนแล้ว เอาไปแชร์ผ่าน ${channel.label} ได้เลย`);
+    }
   };
 
   return (
@@ -290,23 +299,6 @@ export default function StreakCardPage({ initialState = "streak", onBack, onSave
         }
       `}</style>
 
-      {/* toggle สำหรับ preview แต่ละ state (ปิดได้ด้วย prop ตอนต่อ flow จริง) */}
-      {showStateToggle && (
-        <div className="absolute left-1/2 top-2 z-20 flex -translate-x-1/2 gap-1">
-          {PREVIEW_STATES.map((s) => (
-            <button
-              key={s.id}
-              onClick={() => setUi(s.id)}
-              className={`rounded-full px-2.5 py-1 text-[10px] transition ${
-                ui === s.id ? "bg-[#8B5CF6] text-white" : "border border-[#FBCFE8] bg-white/80 text-[#9D5C7C]"
-              }`}
-            >
-              {s.label}
-            </button>
-          ))}
-        </div>
-      )}
-
       <main className={`mx-auto flex w-full max-w-md flex-1 flex-col px-6 pb-5 md:max-w-lg ${showStateToggle ? "pt-12" : "pt-5"}`}>
         {/* หัวจอ: ย้อนกลับ + ชื่อหน้า — ปักไว้บนสุดเสมอ ไม่ลอยตามการจัดกลาง */}
         <div className="mb-1 flex h-8 shrink-0 items-center gap-3">
@@ -322,7 +314,7 @@ export default function StreakCardPage({ initialState = "streak", onBack, onSave
 
         {/* การ์ด + ปุ่ม action — จัดกลางแนวตั้งในที่ว่างที่เหลือ กันไม่ให้จอสูงเกินดูโหว่ล่าง */}
         <div className="flex flex-1 flex-col items-center justify-center">
-          <ShareCard ui={ui} />
+          <ShareCard ui={ui} streakDays={streak} xp={totalXp} userName={userName} initial={initial} referralLink={referralLink} tagline={tagline} />
 
           <div className="mt-4 flex w-full flex-col gap-2">
             <div className="grid grid-cols-3 gap-2">

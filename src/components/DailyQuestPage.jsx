@@ -173,6 +173,7 @@ export default function DailyQuestPage({
   onShareStreak,
   onInvite,
   showStateToggle = true,
+  heightClass = "min-h-dvh", // ฝังในเชลล์ส่ง "min-h-full" ให้เกาะความสูง main ที่หักหัว/nav ออกแล้ว (standalone = min-h-dvh)
   status,
   dateLabel = MOCK.dateLabel,
   topicTitle = MOCK.topic,
@@ -226,7 +227,7 @@ export default function DailyQuestPage({
 
   return (
     <div
-      className="relative flex min-h-dvh flex-col overflow-hidden font-body text-[#831843]"
+      className={`relative flex ${heightClass} flex-col overflow-hidden font-body text-[#831843]`}
       style={{
         backgroundColor: "#FDF2F8",
         backgroundImage: [
@@ -533,7 +534,8 @@ export default function DailyQuestPage({
           <button
             onClick={() => onOpenCoach?.()}
             aria-label="เปิดแชทโค้ช"
-            className="fixed bottom-5 right-5 z-10 flex items-center gap-2 rounded-full bg-gradient-to-r from-violet-500 to-pink-500 px-4 py-2.5 font-heading text-sm font-bold text-white shadow-[0_10px_24px_rgba(139,92,246,.35)] transition hover:-translate-y-0.5 hover:shadow-[0_14px_30px_rgba(139,92,246,.45)] hover:brightness-105 active:translate-y-px"
+            style={{ bottom: "calc(20px + var(--shell-bottom-offset, 0px))" }}
+            className="fixed right-5 z-10 flex items-center gap-2 rounded-full bg-gradient-to-r from-violet-500 to-pink-500 px-4 py-2.5 font-heading text-sm font-bold text-white shadow-[0_10px_24px_rgba(139,92,246,.35)] transition hover:-translate-y-0.5 hover:shadow-[0_14px_30px_rgba(139,92,246,.45)] hover:brightness-105 active:translate-y-px"
           >
             <Icon name="chat" className="h-5 w-5" />
             ถามโค้ช

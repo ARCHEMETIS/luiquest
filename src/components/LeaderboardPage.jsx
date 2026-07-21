@@ -7,43 +7,9 @@
 import { useEffect, useRef, useState } from "react";
 import GhostMascot from "./GhostMascot";
 
-const MOCK = {
-  // กระดานหลัก 42 คน — ตัวเราอยู่อันดับ 38 (ลึกพอทดสอบ pin/highlight), XP ตรงกับหน้าเควส (1,250)
-  ready: [
-    { name: "ธีรภัทร ใจสู้", xp: 15840 }, { name: "ปรียาภรณ์ เก่งกาจ", xp: 14620 }, { name: "ก้องภพ พุ่งแรง", xp: 13980 },
-    { name: "ชนากานต์ มุ่งมั่น", xp: 12410 }, { name: "วรากร ไฟแรง", xp: 11250 }, { name: "ศิรดา ขยันยิ่ง", xp: 10480 },
-    { name: "ภูริช ลุยไม่พัก", xp: 9720 }, { name: "มนัสวี ตั้งใจจริง", xp: 9310 }, { name: "กันตพงศ์ สู้ไม่ถอย", xp: 8420 },
-    { name: "รัชชานนท์ ฟิตเสมอ", xp: 7850 }, { name: "เบญญาภา แกร่งกล้า", xp: 7430 }, { name: "ณัฐวุฒิ หมั่นเพียร", xp: 6980 },
-    { name: "สมฤทัย ใฝ่รู้", xp: 6540 }, { name: "ธันยพร เพียรเลิศ", xp: 6120 }, { name: "จิรายุ รุ่งเรือง", xp: 5760 },
-    { name: "กมลชนก ชิงชัย", xp: 5390 }, { name: "ปุณณวิช คงมั่น", xp: 5010 }, { name: "อชิรญา กล้าหาญ", xp: 4680 },
-    { name: "นราวิชญ์ เดินหน้า", xp: 4320 }, { name: "พลอยไพลิน แสงทอง", xp: 4050 }, { name: "ศุภกร ก้าวไกล", xp: 3780 },
-    { name: "ญาณิศา ปั้นฝัน", xp: 3510 }, { name: "คุณานนต์ ทะยานสูง", xp: 3260 }, { name: "ณิชาภัทร สดใส", xp: 3020 },
-    { name: "ปวริศ เร่งรุด", xp: 2810 }, { name: "อรปรียา ผ่องอำไพ", xp: 2640 }, { name: "ธนกฤต บากบั่น", xp: 2450 },
-    { name: "พิชญธิดา ชูใจ", xp: 2290 }, { name: "กฤตภาส ไม่ยอมแพ้", xp: 2130 }, { name: "ลลิตภัทร เบิกบาน", xp: 1980 },
-    { name: "ศุภวิชญ์ ทรหด", xp: 1840 }, { name: "ณัฐณิชา มานะดี", xp: 1720 }, { name: "ธีรเดช คมคาย", xp: 1610 },
-    { name: "ปาณิสรา อดทน", xp: 1520 }, { name: "วชิรวิทย์ เข้มแข็ง", xp: 1430 }, { name: "อิงฟ้า สู้ฟัด", xp: 1360 },
-    { name: "ปัณณธร ขยับใกล้", xp: 1290 }, { name: "พิมพ์ชนก รักเรียน", xp: 1250, me: true },
-    { name: "นวพร ค่อยเป็นค่อยไป", xp: 1180 }, { name: "ภาคิน เพิ่งเริ่ม", xp: 1020 }, { name: "สุพิชญา ตามฝัน", xp: 870 },
-    { name: "เมธาวี เริ่มลุย", xp: 610 },
-  ],
-  // ช่วงแอพเพิ่งเปิด — 5 คน ตัวเราอันดับ 2 (ตรงกับ "#2 จาก 5 คน" ในแถบสถานะหน้าเควส)
-  // เพื่อนที่ลิสต์ไว้ตรงกับ referral.friends ของ preset "capped" ใน ProfileDrawer (ณัฐวุฒิ/สมฤทัย/ก้องภพ/ธันยพร)
-  few: [
-    { name: "ณัฐวุฒิ หมั่นเพียร", xp: 1490 },
-    { name: "พิมพ์ชนก รักเรียน", xp: 1250, me: true },
-    { name: "สมฤทัย ใฝ่รู้", xp: 980 },
-    { name: "ก้องภพ พุ่งแรง", xp: 450 },
-    { name: "ธันยพร เพียรเลิศ", xp: 80 },
-  ],
-};
 
 const EMPTY_SEAT_COUNT = 2; // เก้าอี้ว่างต่อท้ายกระดานตอนคนน้อย — 5 คน → อันดับว่าง 6 กับ 7 (ตั้งใจให้เข้ามุก 6/7 ของมาสคอต)
 
-const PREVIEW_STATES = [
-  { id: "loading", label: "โหลด" },
-  { id: "ready", label: "คนเยอะ (อันดับลึก)" },
-  { id: "few", label: "คนน้อย (แอพเพิ่งเปิด)" },
-];
 
 // สีเหรียญ top 3 — ทอง/เงิน/ทองแดง พร้อมสีเงาพิกเซลทึบของแต่ละเหรียญ
 const MEDAL = {
@@ -282,21 +248,27 @@ const EmptySeatRow = ({ rank, delay = 0 }) => (
 
 const Skeleton = ({ className = "" }) => <div className={`animate-pulse rounded-2xl bg-[#FBCFE8]/50 ${className}`} />;
 
-export default function LeaderboardPage({ initialState = "ready", onInvite, showStateToggle = true, heightClass = "min-h-dvh" }) {
-  const [ui, setUi] = useState(initialState);
+export default function LeaderboardPage({ rows, loading = false, error = null, currentUserId, currentUserName, onInvite, showStateToggle = false, heightClass = "min-h-dvh" }) {
   const [meInView, setMeInView] = useState(false);
   const [meDir, setMeDir] = useState("down"); // แถวของเราอยู่ทางไหนของจอ — ให้ลูกศรบนการ์ด pin ชี้ถูกทาง
   const [justJumped, setJustJumped] = useState(false); // true ชั่วคราวตอนกด pin แล้วเลื่อนมาถึงแถวตัวเอง — ให้แถวกระพริบเรืองแสง
   const meRowRef = useRef(null);
   const jumpTimers = useRef({});
 
-  const board = ui === "few" ? MOCK.few : MOCK.ready;
-  // .find(e => e.me) แล้วหา index ซ้ำคือสองรอบสแกน — findIndex ครั้งเดียวพอ, กันพังด้วย fallback อันดับ 1
-  // ถ้าบอร์ดจริงจาก API ไม่มีแถว "ตัวเอง" ติดมา (ยังไม่ได้จัดอันดับ) จะได้ไม่ throw ตอน .name/.xp
-  const meIndex = Math.max(board.findIndex((e) => e.me), 0);
-  const me = board[meIndex];
-  const meRank = meIndex + 1;
-  const chaseTarget = meIndex > 0 ? board[meIndex - 1] : null; // คนที่อยู่เหนือเราหนึ่งอันดับ
+  // ต่อ view `leaderboard` จริงแล้ว — map แต่ละแถวเป็น { name, xp, me } (rank = ลำดับใน array), highlight แถวตัวเองจาก currentUserId
+  const board = (rows ?? []).map((r) => ({ id: r.user_id, name: r.display_name || "ผู้ใช้ลุยเควส", xp: r.total_xp, rank: Number(r.rank), me: r.user_id === currentUserId }));
+  const isLoading = loading || (!rows && !error);
+  // คนน้อย → โหมด "few" (เก้าอี้ว่าง + ชวนเพื่อน ไม่โล่งเหงา), คนเยอะ → "ready" (การ์ด pin หาแถวตัวเอง)
+  const ui = isLoading ? "loading" : board.length < 10 ? "few" : "ready";
+  // findIndex ครั้งเดียวพอ, fallback อันดับ 1 ถ้าบอร์ดไม่มีแถวตัวเอง; กันพังตอนบอร์ดว่างด้วย ?? ก้อน default
+  const meFoundIndex = board.findIndex((e) => e.me);
+  const meFound = meFoundIndex >= 0;
+  const meIndex = Math.max(meFoundIndex, 0);
+  // ถ้าแถวตัวเองไม่อยู่ในบอร์ด (ยังไม่ติดอันดับ / ปิด leaderboard) ใช้ชื่อจริงจากโปรไฟล์ ไม่แอบอ้างอันดับของคนอื่น
+  const me = meFound ? board[meIndex] : { id: currentUserId, name: currentUserName || "คุณ", xp: 0, rank: null, me: true };
+  const meRank = me.rank ?? meIndex + 1; // ใช้อันดับจริงจาก view — คนอันดับลึกกว่า top slice จะไม่ถูกนับใหม่เป็น #(slice+1)
+  const chaseTarget = meFound && meIndex > 0 ? board[meIndex - 1] : null; // คนที่อยู่เหนือเราหนึ่งอันดับ
+  const chaseAdjacent = !!chaseTarget && chaseTarget.rank === meRank - 1; // ติดกันจริงเท่านั้นถึงโชว์ "ตามอีก X XP" (กันเพี้ยนตอนแถวเราถูก append ท้าย top slice)
   const chaseGap = chaseTarget ? chaseTarget.xp - me.xp : 0; // XP ที่ต้องแซง (เท่ากับพอดีคือเสมอ ไม่ใช่แซง)
   const seatStart = board.length + 1; // อันดับแรกที่ยังว่างต่อจากคนสุดท้ายในกระดาน (state few)
 
@@ -319,7 +291,7 @@ export default function LeaderboardPage({ initialState = "ready", onInvite, show
     return () => io.disconnect();
   }, [ui]);
 
-  const showPin = ui === "ready" && !meInView;
+  const showPin = ui === "ready" && !meInView && meFound; // ไม่มีแถวตัวเองในบอร์ด = ไม่มีอะไรให้เลื่อนไปหา
 
   // หา scroll container จริงที่ครอบ el อยู่ — เดิม hardcode window ไว้ ใช้ได้ตอน standalone (หน้าเดี่ยว ๆ ไม่มีอะไรครอบ เลื่อนที่ window ปกติ)
   // แต่พอฝังใน AppShell (ticket #10) ตัวที่เลื่อนจริงคือ <main overflow-y-auto> ของเชลล์ ไม่ใช่ window อีกต่อไป (window/document ไม่ขยับเลย)
@@ -415,25 +387,6 @@ export default function LeaderboardPage({ initialState = "ready", onInvite, show
         @keyframes lb-seat-glow { 0%, 100% { border-color: #FBCFE8; box-shadow: 0 0 0 0 rgba(139,92,246,0); } 50% { border-color: #F9A8D4; box-shadow: 0 0 14px 1px rgba(139,92,246,.18); } }
       `}</style>
 
-      {/* toggle สำหรับ preview แต่ละ state (ปิดได้ด้วย prop ตอนต่อ flow จริง) */}
-      {showStateToggle && (
-        <div className="absolute inset-x-0 top-2 z-20 flex flex-wrap items-center justify-center gap-1 px-3">
-          {PREVIEW_STATES.map((s) => (
-            <button
-              key={s.id}
-              onClick={() => setUi(s.id)}
-              className={`whitespace-nowrap rounded-full px-2.5 py-1 text-[10px] transition ${
-                ui === s.id
-                  ? "bg-[#8B5CF6] text-white"
-                  : "border border-[#FBCFE8] bg-white/80 text-[#9D5C7C] hover:border-[#8B5CF6]/50 hover:text-[#8B5CF6]"
-              }`}
-            >
-              {s.label}
-            </button>
-          ))}
-        </div>
-      )}
-
       {ui === "loading" ? (
         /* ---------- skeleton — จองที่ตามโครงจริง (แท่นรางวัล + แถว) กัน layout เด้ง ---------- */
         <main className={`mx-auto flex w-full max-w-md flex-1 flex-col px-6 pb-8 md:max-w-xl ${showStateToggle ? "pt-14" : "pt-6"}`}>
@@ -483,7 +436,7 @@ export default function LeaderboardPage({ initialState = "ready", onInvite, show
           </div>
 
           {/* คนน้อย + เรายังไม่ใช่ที่ 1 → แซะเบา ๆ ว่าแชมป์อยู่แค่เอื้อม (เลขอันดับ/ชื่อคนที่แซง derive จาก meRank จริง ไม่ล็อค #1) */}
-          {ui === "few" && chaseTarget && (
+          {ui === "few" && chaseAdjacent && (
             <p className="mt-3 text-center text-[11px] text-[#9D5C7C]" style={{ animation: "lb-in .3s ease-out .25s both" }}>
               อีกแค่ <span className="font-heading font-bold text-[#8B5CF6]">{(chaseGap + 1).toLocaleString()} XP</span> คุณก็แซง{" "}
               {chaseTarget.name.split(" ")[0]} ขึ้น #{meRank - 1} แล้วนะ
@@ -493,7 +446,7 @@ export default function LeaderboardPage({ initialState = "ready", onInvite, show
           {/* อันดับ 4 เป็นต้นไป */}
           <div className="mt-4 flex flex-col gap-2">
             {board.slice(3).map((entry, i) => (
-              <BoardRow key={entry.name} entry={entry} rank={i + 4} index={i} meRef={meRowRef} flash={justJumped} />
+              <BoardRow key={entry.id ?? entry.name} entry={entry} rank={entry.rank ?? i + 4} index={i} meRef={meRowRef} flash={justJumped} />
             ))}
             {ui === "few" &&
               Array.from({ length: EMPTY_SEAT_COUNT }, (_, i) => <EmptySeatRow key={i} rank={seatStart + i} delay={i * 0.4} />)}
@@ -550,7 +503,7 @@ export default function LeaderboardPage({ initialState = "ready", onInvite, show
                 <span className="truncate text-[13px] font-bold text-[#831843]">{me.name}</span>
                 <MeBadge />
               </span>
-              {chaseTarget && (
+              {chaseAdjacent && (
                 <span className="block text-[10px] text-[#9D5C7C]" style={{ fontVariantNumeric: "tabular-nums" }}>
                   ตามอันดับ {meRank - 1} อยู่แค่ {chaseGap.toLocaleString()} XP
                 </span>

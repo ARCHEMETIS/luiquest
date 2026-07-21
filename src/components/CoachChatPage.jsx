@@ -73,6 +73,7 @@ export default function CoachChatPage({
   initialQuotaUsed = 0,
   quotaTotal = DEFAULT_QUOTA_TOTAL,
   onSend,
+  heightClass = "h-dvh", // ฝังในเชลล์ส่ง "h-full" ให้ช่องพิมพ์เกาะก้น main (ไม่หลุดใต้ bottom nav)
 }) {
   const [messages, setMessages] = useState(initialMessages);
   const [quotaUsed, setQuotaUsed] = useState(initialQuotaUsed);
@@ -143,7 +144,7 @@ export default function CoachChatPage({
 
   return (
     <div
-      className="relative flex h-dvh flex-col overflow-hidden font-body text-[#831843]"
+      className={`relative flex ${heightClass} flex-col overflow-hidden font-body text-[#831843]`}
       style={{
         backgroundColor: "#FDF2F8",
         backgroundImage: [

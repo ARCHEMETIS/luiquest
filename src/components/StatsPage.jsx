@@ -7,31 +7,7 @@ import { useEffect, useRef, useState } from "react";
 import GhostMascot from "./GhostMascot";
 import { LuiQuestFavicon } from "./LuiQuestLogo";
 
-const MOCK = {
-  ready: {
-    totalSignups: 3842,
-    activeUsers: 2615,
-    questsCompleted: 48920,
-    maxStreak: 62,
-    avgStreak: 9,
-    // จุดข้อมูลกราฟสะสม — ไม่ผูกกับจำนวนวันที่ตายตัว (ของจริงมาจาก endpoint) เลยไม่ใส่ label ช่วงเวลาเป๊ะ ๆ
-    growth: [210, 480, 760, 1050, 1360, 1690, 2040, 2390, 2720, 3040, 3340, 3620, 3780, 3842],
-  },
-  early: {
-    totalSignups: 34,
-    activeUsers: 21,
-    questsCompleted: 186,
-    maxStreak: 11,
-    avgStreak: 3,
-    growth: [3, 6, 11, 17, 23, 28, 34],
-  },
-};
-
-const PREVIEW_STATES = [
-  { id: "loading", label: "โหลด" },
-  { id: "ready", label: "โตแล้ว" },
-  { id: "early", label: "เพิ่งเปิดตัว" },
-];
+// ข้อมูลจริงมาจาก props (stats = view public_stats, growth = view stats_daily_growth) — map เข้าโครง data เดิมด้านล่าง
 
 // path จาก Heroicons 24/outline (assets/heroicons — MIT)
 const ICON_PATHS = {
@@ -296,17 +272,30 @@ function GrowthChart({ values, trend = false, delay = 0 }) {
   );
 }
 
-export default function StatsPage({ initialState = "ready", onLogin, showStateToggle = true }) {
-  const [ui, setUi] = useState(initialState);
-  const loading = ui === "loading";
-  const early = ui === "early";
-  const data = loading ? null : MOCK[ui] ?? MOCK.ready;
+export default function StatsPage({ stats, growth, loading = false, error = null, onLogin, showStateToggle = false }) {
+  // ต่อ view aggregate จริงแล้ว — map public_stats/stats_daily_growth เข้าโครง data เดิมของหน้า
+  const isLoading = loading || (!stats && !error);
+  const signups = stats?.registered_total ?? 0;
+  const early = !isLoading && signups < 100; // แอพเพิ่งเปิด ตัวเลขยังน้อย → โหมด "เพิ่งเปิดตัว" (เส้นแนวโน้ม + copy ต่างออกไป ไม่โล่งเหงา)
+  const data = stats
+    ? {
+        totalSignups: signups,
+        activeUsers: stats.activated_total ?? 0,
+        questsCompleted: stats.quests_completed_total ?? 0,
+        maxStreak: stats.max_streak ?? 0,
+        avgStreak: Math.round(stats.avg_active_streak ?? 0),
+        growth: (() => {
+          const vals = (growth ?? []).map((g) => Number(g.cumulative_users) || 0);
+          return vals.length >= 2 ? vals : [0, Math.max(signups, 1)]; // GrowthChart ต้องมี ≥2 จุด กันหารศูนย์ตอนข้อมูลวันแรกยังน้อย
+        })(),
+      }
+    : null;
 
   // ตัวเลขที่ "ขยับสด" ได้จริงในโลกจริง (ผู้ใช้/เควสสำเร็จ) ให้ขยับเบา ๆ ต่อเนื่อง — สถิติที่นิ่งกว่า (streak สูงสุด/เฉลี่ย) ปล่อยนิ่งไว้ตามเดิม
-  const liveActiveUsers = useLiveTick(data?.activeUsers ?? 0, !loading, [1, 2], [4000, 7000]);
-  const liveTotalSignups = useLiveTick(data?.totalSignups ?? 0, !loading, [1, 3], [3500, 6500]);
-  const liveQuestsCompleted = useLiveTick(data?.questsCompleted ?? 0, !loading, [2, 6], [2500, 5000]);
-  const activePct = data ? Math.round((liveActiveUsers / liveTotalSignups) * 100) : 0;
+  const liveActiveUsers = useLiveTick(data?.activeUsers ?? 0, !isLoading, [1, 2], [4000, 7000]);
+  const liveTotalSignups = useLiveTick(data?.totalSignups ?? 0, !isLoading, [1, 3], [3500, 6500]);
+  const liveQuestsCompleted = useLiveTick(data?.questsCompleted ?? 0, !isLoading, [2, 6], [2500, 5000]);
+  const activePct = data && liveTotalSignups > 0 ? Math.round((liveActiveUsers / liveTotalSignups) * 100) : 0;
 
   return (
     <div
@@ -328,24 +317,7 @@ export default function StatsPage({ initialState = "ready", onLogin, showStateTo
         @keyframes stats-icon-glow { 0%, 100% { box-shadow: 0 0 0 0 rgba(139,92,246,.35); } 50% { box-shadow: 0 0 0 8px rgba(139,92,246,0); } }
       `}</style>
 
-      {/* toggle สำหรับ preview แต่ละ state (ปิดได้ด้วย prop ตอนต่อ flow จริง) */}
-      {showStateToggle && (
-        <div className="absolute left-1/2 top-2 z-20 flex -translate-x-1/2 gap-1">
-          {PREVIEW_STATES.map((s) => (
-            <button
-              key={s.id}
-              onClick={() => setUi(s.id)}
-              className={`rounded-full px-2.5 py-1 text-[10px] transition ${
-                ui === s.id ? "bg-[#8B5CF6] text-white" : "border border-[#FBCFE8] bg-white/80 text-[#9D5C7C]"
-              }`}
-            >
-              {s.label}
-            </button>
-          ))}
-        </div>
-      )}
-
-      {loading ? (
+      {isLoading ? (
         /* ---------- skeleton — จองที่ตามโครงจริง กัน layout เด้ง ---------- */
         <main className={`mx-auto flex w-full max-w-md flex-1 flex-col gap-6 px-6 pb-10 md:max-w-xl ${showStateToggle ? "pt-14" : "pt-6"}`}>
           <div className="flex items-center justify-between">
@@ -366,7 +338,7 @@ export default function StatsPage({ initialState = "ready", onLogin, showStateTo
           <Skeleton className="h-44" />
         </main>
       ) : (
-        <main key={ui} className={`mx-auto flex w-full max-w-md flex-1 flex-col gap-6 px-6 pb-10 md:max-w-xl ${showStateToggle ? "pt-14" : "pt-6"}`}>
+        <main key={early ? "early" : "ready"} className={`mx-auto flex w-full max-w-md flex-1 flex-col gap-6 px-6 pb-10 md:max-w-xl ${showStateToggle ? "pt-14" : "pt-6"}`}>
           {/* หัวจอ: แบรนด์ + ปุ่มเข้าสู่ระบบ (หน้านี้คนนอกเห็น ต้องมีทางไป login) */}
           <div className="flex items-center justify-between" style={{ animation: "stats-in .35s ease-out both" }}>
             <div className="flex items-center gap-2">
@@ -442,7 +414,7 @@ export default function StatsPage({ initialState = "ready", onLogin, showStateTo
               <h2 className="font-heading text-[13px] font-bold">การเติบโตของผู้ใช้สะสม</h2>
             </div>
             <div className="mt-3">
-              <GrowthChart key={ui} values={data.growth} trend={early} delay={300} />
+              <GrowthChart key={early ? "early" : "ready"} values={data.growth} trend={early} delay={300} />
             </div>
           </div>
 

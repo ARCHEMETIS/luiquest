@@ -92,6 +92,7 @@ export default function Coach() {
       onSend={handleSend}
       onBack={() => navigate('/quest')}
       onGoToQuest={() => navigate('/quest')}
+      heightClass="h-full"
     />
   );
 }

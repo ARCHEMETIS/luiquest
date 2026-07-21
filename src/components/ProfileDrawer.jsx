@@ -6,8 +6,14 @@
 // หมายเหตุ: บรีฟต้นฉบับเรียกระบบคะแนนว่า "grade A-F" แต่ ticket #4 ที่ shipped แล้วใช้ระบบ "แรงค์" S/A/B/C แทน — ที่นี่ใช้แรงค์ให้ตรงกับหน้าเควส
 
 import { useEffect, useRef, useState } from "react";
+import { useNavigate } from "react-router-dom";
+import { useAuth } from "../hooks/useAuth.jsx";
+import { useProfile } from "../hooks/useProfile.jsx";
+import { api } from "../lib/api.js";
+import { supabase } from "../lib/supabaseClient.js";
 
-const LEVEL_LABEL = { beginner: "มือใหม่ 🌱", some: "พอมีพื้น 🌿", solid: "แน่นแล้ว 🌳" };
+// level enum จริงจาก backend = beginner/intermediate/advanced (ต่างจาก id การ์ด onboarding some/solid)
+const LEVEL_LABEL = { beginner: "มือใหม่ 🌱", intermediate: "พอมีพื้น 🌿", advanced: "แน่นแล้ว 🌳" };
 const RANK_COLOR = { S: "text-[#FBBF24]", A: "text-emerald-600", B: "text-[#8B5CF6]", C: "text-amber-600" };
 const TOPIC_CAP_FREE = 3;
 
@@ -55,6 +61,21 @@ const TOPIC_META = {
   },
 };
 
+// resolve icon/tint ต่อหัวข้อจาก topic_title จริง (me.js ไม่ส่ง slug มา) — curated จับ keyword ได้, freeform ใช้ default
+const DEFAULT_TOPIC_META = {
+  tint: "bg-violet-100 text-violet-600",
+  icon: ["M9.813 15.904 9 18.75l-.813-2.846a4.5 4.5 0 0 0-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 0 0 3.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 0 0 3.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 0 0-3.09 3.09Z"],
+};
+const TOPIC_KEYWORD_META = [
+  [/python|ไพทอน/i, TOPIC_META.python],
+  [/data|\bml\b|machine|ดาต้า/i, TOPIC_META["data-ml"]],
+  [/เว็บ|web|html|css/i, TOPIC_META.web],
+  [/\bai\b|เอไอ|ปัญญาประดิษฐ์/i, TOPIC_META.ai],
+  [/excel|sheet|ชีท|เอ็กเซล/i, TOPIC_META.excel],
+  [/เงิน|การเงิน|finance|ลงทุน/i, TOPIC_META.finance],
+];
+const metaForTopic = (title) => TOPIC_KEYWORD_META.find(([re]) => re.test(title || ""))?.[1] ?? DEFAULT_TOPIC_META;
+
 // icon UI ทั่วไปของแถบนี้ (ปิด/copy/เช็ค/ออกจากระบบ/ลูกศร/ประกาย/แชร์)
 const ICON_PATHS = {
   close: ["M6 18 18 6M6 6l12 12"],
@@ -82,49 +103,7 @@ const Icon = ({ paths, className = "h-4 w-4" }) => (
   </svg>
 );
 
-const MOCK = {
-  presets: {
-    capped: {
-      plan: "free",
-      user: { name: "พิมพ์ชนก รักเรียน", initial: "พ" },
-      stats: { xp: 1250, streak: 6, rank: "B" },
-      topics: [
-        { id: "python", level: "solid", active: true },
-        { id: "data-ml", level: "some", active: false },
-        { id: "web", level: "beginner", active: false },
-      ],
-      referral: { link: "luiquest.app/invite/pimchanok88", friends: ["ณัฐวุฒิ", "สมฤทัย", "ก้องภพ", "ธันยพร"] },
-    },
-    single: {
-      plan: "free",
-      user: { name: "อาทิตยา ตั้งใจดี", initial: "อ" },
-      stats: { xp: 80, streak: 1, rank: "–" },
-      topics: [{ id: "python", level: "beginner", active: true }],
-      referral: { link: "luiquest.app/invite/athitaya21", friends: [] },
-    },
-    premium: {
-      plan: "premium",
-      user: { name: "กันตพงศ์ สู้ไม่ถอย", initial: "ก" },
-      stats: { xp: 8420, streak: 34, rank: "A" },
-      topics: [
-        { id: "python", level: "solid", active: false },
-        { id: "ai", level: "some", active: true },
-        { id: "excel", level: "beginner", active: false },
-        { id: "finance", level: "beginner", active: false },
-      ],
-      referral: {
-        link: "luiquest.app/invite/kantapong-x",
-        friends: ["ปรียาภรณ์", "วรากร", "ชนากานต์", "ภูริช", "ศิรดา", "ธีรภัทร", "มนัสวี", "รัชชานนท์", "เบญญาภา"],
-      },
-    },
-  },
-};
 
-const PREVIEW_STATES = [
-  { id: "capped", label: "ครบ 3 หัวข้อ (ฟรี)" },
-  { id: "single", label: "หัวข้อเดียว" },
-  { id: "premium", label: "พรีเมียม" },
-];
 
 const SHARE_CHANNELS = [
   { id: "line", label: "LINE", className: "bg-[#06C755] text-white" },
@@ -133,7 +112,7 @@ const SHARE_CHANNELS = [
 ];
 
 const TopicRow = ({ topic, onSelect }) => {
-  const meta = TOPIC_META[topic.id];
+  const meta = metaForTopic(topic.title);
   const disabled = topic.active;
   return (
     <button
@@ -150,8 +129,8 @@ const TopicRow = ({ topic, onSelect }) => {
         <Icon paths={meta.icon} className="h-4 w-4" />
       </span>
       <span className="min-w-0 flex-1">
-        <span className="block truncate text-[12px] font-bold text-[#831843]">{meta.title}</span>
-        <span className="block text-[9px] text-[#9D5C7C]">{LEVEL_LABEL[topic.level]}</span>
+        <span className="block truncate text-[12px] font-bold text-[#831843]">{topic.title}</span>
+        <span className="block text-[9px] text-[#9D5C7C]">{LEVEL_LABEL[topic.level] ?? topic.level}</span>
       </span>
       {disabled ? (
         <span className="shrink-0 whitespace-nowrap rounded-full bg-[#8B5CF6] px-2 py-0.5 text-[8px] font-bold text-white">
@@ -164,24 +143,31 @@ const TopicRow = ({ topic, onSelect }) => {
   );
 };
 
-export default function ProfileDrawer({
-  open,
-  onClose,
-  onSwitchTopic,
-  onUpgrade,
-  onShare,
-  onLogout,
-  initialState = "capped",
-  showStateToggle = true,
-}) {
-  const [ui, setUi] = useState(initialState);
-  const preset = MOCK.presets[ui];
+export default function ProfileDrawer({ open, onClose, showStateToggle = false }) {
+  const { session, signOut } = useAuth();
+  const { profile, roadmaps, refetch } = useProfile();
+  const navigate = useNavigate();
+  const token = session?.access_token;
 
-  // เปิด/ปิดจากภายนอกได้ผ่าน prop open/onClose — ถ้าไม่ได้ส่งมา (ตอน preview เดี่ยว ๆ) คุมสถานะเองแทน
-  const controlled = typeof open === "boolean";
-  const [demoOpen, setDemoOpen] = useState(true);
-  const isOpen = controlled ? open : demoOpen;
-  const requestClose = () => (controlled ? onClose?.() : setDemoOpen(false));
+  const name = profile?.display_name || "นักผจญภัย";
+  const initial = (name.charAt(0) || "?").toUpperCase();
+  const referralLink = profile?.referral_code ? `${window.location.origin}/invite/${profile.referral_code}` : "";
+
+  const [referralCount, setReferralCount] = useState(0);
+
+  // สร้างข้อมูลรูปเดียวกับ preset เดิมจากของจริง (ลด diff ฝั่ง render) — topics.id = roadmap_id ตัวจริงไว้สลับ
+  const preset = {
+    plan: profile?.is_premium ? "premium" : "free",
+    user: { name, initial },
+    stats: { xp: profile?.total_xp ?? 0, streak: profile?.current_streak ?? 0, rank: profile?.grade ?? "–" },
+    topics: (roadmaps ?? [])
+      .filter((r) => r.status !== "failed")
+      .map((r) => ({ id: r.id, title: r.topic_title, level: r.level, active: r.is_active })),
+    referral: { link: referralLink, count: referralCount },
+  };
+
+  const isOpen = !!open;
+  const requestClose = () => onClose?.();
 
   // เก็บ mount ไว้ระหว่างเล่น animation ปิด แล้วค่อย unmount จริงหลังทรานสิชันจบ (ไม่ให้แถบหายวับทันที)
   const [mounted, setMounted] = useState(isOpen);
@@ -204,20 +190,27 @@ export default function ProfileDrawer({
     return () => document.removeEventListener("keydown", onKey);
   }, [mounted]);
 
-  const [activeTopicId, setActiveTopicId] = useState(() => preset.topics.find((t) => t.active)?.id);
+  // นับจำนวนเพื่อนที่สมัครผ่านลิงก์เรา — RLS ให้ referrer อ่าน referrals ของตัวเองได้ (ชื่อเพื่อนอ่านไม่ได้ โชว์แค่จำนวน)
+  useEffect(() => {
+    if (!mounted || !session?.user?.id) return;
+    let cancelled = false;
+    (async () => {
+      const { count } = await supabase
+        .from("referrals")
+        .select("id", { count: "exact", head: true })
+        .eq("referrer_id", session.user.id);
+      if (!cancelled && typeof count === "number") setReferralCount(count);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [mounted, session?.user?.id]);
+
+  const [switchingId, setSwitchingId] = useState(null);
   const [switchMsg, setSwitchMsg] = useState("");
   const [copied, setCopied] = useState(false);
   const [shareMsg, setShareMsg] = useState("");
   const timers = useRef({});
-
-  // เปลี่ยน preset ตอน preview ก็รีเซ็ตสถานะ local ทั้งหมดที่ผูกกับ preset เดิม
-  useEffect(() => {
-    setActiveTopicId(preset.topics.find((t) => t.active)?.id);
-    setSwitchMsg("");
-    setCopied(false);
-    setShareMsg("");
-    Object.values(timers.current).forEach(clearTimeout);
-  }, [ui]);
 
   useEffect(() => () => Object.values(timers.current).forEach(clearTimeout), []);
 
@@ -227,100 +220,59 @@ export default function ProfileDrawer({
     timers.current[key] = setTimeout(() => setter(key === "copied" ? false : ""), ms);
   };
 
-  const selectTopic = (id) => {
-    if (id === activeTopicId) return;
-    setActiveTopicId(id);
-    const meta = TOPIC_META[id];
-    onSwitchTopic?.(id);
-    flash("switch", setSwitchMsg, `สลับไปเรียน ${meta.title} แล้ว`);
+  const activeTopicId = preset.topics.find((t) => t.active)?.id;
+
+  // สลับหัวข้อ active จริงผ่าน service-role function แล้ว refetch โปรไฟล์ (progress หัวข้อเดิมไม่หาย)
+  const selectTopic = async (roadmapId) => {
+    if (roadmapId === activeTopicId || switchingId || !token) return;
+    const target = preset.topics.find((t) => t.id === roadmapId);
+    setSwitchingId(roadmapId);
+    try {
+      await api.switchRoadmap(roadmapId, token);
+      await refetch();
+      flash("switch", setSwitchMsg, `สลับไปเรียน ${target?.title ?? "หัวข้อใหม่"} แล้ว`);
+    } catch {
+      flash("switch", setSwitchMsg, "สลับหัวข้อไม่สำเร็จ ลองใหม่อีกครั้ง");
+    } finally {
+      setSwitchingId(null);
+    }
   };
 
   const copyLink = () => {
-    navigator.clipboard?.writeText(preset.referral.link).catch(() => {});
+    if (!referralLink) return;
+    navigator.clipboard?.writeText(referralLink).catch(() => {});
     flash("copied", setCopied, true);
   };
 
   const share = (channel) => {
-    onShare?.(channel);
-    flash("share", setShareMsg, `เปิดหน้าต่างแชร์ผ่าน ${channel.label} ให้แล้ว`);
+    if (referralLink && navigator.share) {
+      navigator
+        .share({ title: "ลุยเควส", text: "มาลุยเควสเก็บ XP/streak กัน! สมัครผ่านลิงก์นี้ได้ XP ทั้งคู่", url: referralLink })
+        .catch(() => {});
+      flash("share", setShareMsg, "เปิดหน้าต่างแชร์ให้แล้ว");
+    } else {
+      // เบราว์เซอร์ไม่มี Web Share (เดสก์ท็อป) — คัดลอกลิงก์ให้จริง ไม่ใช่แค่ขึ้นข้อความ
+      navigator.clipboard?.writeText(referralLink).catch(() => {});
+      flash("share", setShareMsg, `คัดลอกลิงก์แล้ว เอาไปแชร์ผ่าน ${channel.label} ได้เลย`);
+    }
   };
 
-  const logout = () => {
-    onLogout?.();
+  const logout = async () => {
     requestClose();
+    await signOut();
+    navigate("/login");
   };
 
   const atCap = preset.topics.length >= TOPIC_CAP_FREE && preset.plan === "free";
 
-  // โหมด controlled (shell ส่ง open/onClose มา) ปิดสนิทแล้วไม่ render อะไรเลย — ไม่เหลือกล่อง h-dvh ไปบัง/ดันหน้าที่อยู่ข้างหลัง
-  if (controlled && !mounted) return null;
+  // ปิดสนิทแล้วไม่ render อะไรเลย — ไม่เหลือกล่องไปบัง/ดันหน้าที่อยู่ข้างหลัง
+  if (!mounted) return null;
 
   return (
-    <div
-      className={
-        controlled
-          ? "fixed inset-0 z-50 font-body text-[#831843]"
-          : "relative mx-auto h-dvh w-full max-w-md overflow-hidden font-body text-[#831843] md:max-w-xl"
-      }
-    >
+    <div className="fixed inset-0 z-50 font-body text-[#831843]">
       <style>{`
         @keyframes pd-in { 0% { opacity: 0; transform: translateY(6px); } 100% { opacity: 1; transform: translateY(0); } }
       `}</style>
-
-      {/* toggle สำหรับ preview แต่ละ preset ข้อมูล (ปิดได้ด้วย prop ตอนต่อ flow จริง) */}
-      {showStateToggle && (
-        <div className="absolute inset-x-0 top-2 z-[60] flex flex-wrap items-center justify-center gap-1 px-3">
-          {PREVIEW_STATES.map((s) => (
-            <button
-              key={s.id}
-              onClick={() => setUi(s.id)}
-              className={`whitespace-nowrap rounded-full px-2.5 py-1 text-[10px] transition ${
-                ui === s.id
-                  ? "bg-[#8B5CF6] text-white"
-                  : "border border-[#FBCFE8] bg-white/80 text-[#9D5C7C] hover:border-[#8B5CF6]/50 hover:text-[#8B5CF6]"
-              }`}
-            >
-              {s.label}
-            </button>
-          ))}
-        </div>
-      )}
-
-      {/* จำลอง background page + nav ไว้ให้กดแตะรูปโปรไฟล์เปิดแถบตอน preview เดี่ยว ๆ (ของจริง nav ต่างหากจะเรียกใช้ open/onClose เอง) */}
-      {!controlled && (
-        <div
-          className="flex h-full flex-col"
-          style={{
-            backgroundColor: "#FDF2F8",
-            backgroundImage: [
-              "radial-gradient(ellipse 220px 160px at 8% 4%, rgba(139,92,246,.14), transparent 70%)",
-              "radial-gradient(ellipse 200px 180px at 95% 22%, rgba(249,168,212,.30), transparent 70%)",
-              "radial-gradient(ellipse 260px 200px at 15% 96%, rgba(236,72,153,.10), transparent 70%)",
-            ].join(","),
-            backgroundRepeat: "no-repeat",
-          }}
-        >
-          <header
-            className={`flex shrink-0 items-center justify-between border-b border-[#FBCFE8] bg-gradient-to-b from-white to-[#FDF2F8] px-4 py-3 ${showStateToggle ? "pt-12" : ""}`}
-          >
-            <span className="font-heading text-sm font-bold">ลุยเควส</span>
-            <button
-              onClick={() => setDemoOpen(true)}
-              className="flex items-center gap-2 rounded-full border border-[#FBCFE8] bg-white/80 py-1 pl-1 pr-3 transition hover:border-[#8B5CF6]/50 active:translate-y-px"
-            >
-              <span className="flex h-7 w-7 items-center justify-center rounded-full bg-gradient-to-br from-violet-200 to-pink-200 font-heading text-xs font-bold text-[#831843]">
-                {preset.user.initial}
-              </span>
-              <span className="max-w-[110px] truncate text-[11px] font-bold text-[#831843]">{preset.user.name}</span>
-            </button>
-          </header>
-          <main className="flex flex-1 items-center justify-center px-8 text-center text-xs leading-relaxed text-[#9D5C7C]">
-            แตะรูปโปรไฟล์ด้านบนเพื่อเปิดแถบเมนู — nav ตัวจริง (ticket #10) จะเรียก component นี้ด้วย prop{" "}
-            <code className="rounded bg-white/70 px-1 py-0.5 text-[10px]">open</code>/
-            <code className="rounded bg-white/70 px-1 py-0.5 text-[10px]">onClose</code> แทน
-          </main>
-        </div>
-      )}
 
       {mounted && (
         <>
@@ -406,14 +358,7 @@ export default function ProfileDrawer({
                 )}
                 {atCap && (
                   <div className="mt-3 rounded-2xl border border-amber-200 bg-amber-50 px-3 py-2.5 text-[11px] leading-relaxed text-amber-800">
-                    เก็บครบ {TOPIC_CAP_FREE} หัวข้อแล้ว — อัปเกรดพรีเมียมเพื่อเรียนได้ไม่จำกัด
-                    <button
-                      onClick={() => onUpgrade?.()}
-                      className="mt-2 flex items-center gap-1 rounded-full bg-gradient-to-r from-violet-500 to-pink-500 px-3 py-1.5 font-heading text-[10px] font-bold text-white shadow-[0_8px_18px_rgba(139,92,246,.28)] transition hover:-translate-y-0.5 active:translate-y-px"
-                    >
-                      <Icon paths={ICON_PATHS.sparkles} className="h-3 w-3" />
-                      อัปเกรดพรีเมียม
-                    </button>
+                    เก็บครบ {TOPIC_CAP_FREE} หัวข้อแล้ว — เรียนหลายหัวข้อพร้อมกันไม่จำกัดจะมากับพรีเมียมเร็ว ๆ นี้ ✨
                   </div>
                 )}
               </div>
@@ -459,24 +404,24 @@ export default function ProfileDrawer({
                   </p>
                 )}
 
-                {preset.referral.friends.length === 0 ? (
+                {preset.referral.count === 0 ? (
                   <p className="mt-3 rounded-2xl border border-[#FBCFE8] bg-white/60 px-3 py-2.5 text-[11px] leading-relaxed text-[#9D5C7C]">
                     ยังไม่มีเพื่อนสมัครผ่านลิงก์คุณเลย ลองแชร์ดูสิ ✨
                   </p>
                 ) : (
                   <div className="mt-3 flex items-center gap-2">
                     <div className="flex -space-x-2">
-                      {preset.referral.friends.slice(0, 4).map((name, i) => (
+                      {Array.from({ length: Math.min(preset.referral.count, 4) }, (_, i) => (
                         <span
                           key={i}
                           className="flex h-6 w-6 items-center justify-center rounded-full border-2 border-white bg-gradient-to-br from-violet-200 to-pink-200 text-[10px] font-bold text-[#831843]"
                         >
-                          {name.charAt(0)}
+                          🙂
                         </span>
                       ))}
                     </div>
                     <p className="text-[11px] text-[#9D5C7C]">
-                      เพื่อนสมัครผ่านลิงก์คุณแล้ว <span className="font-bold text-[#831843]">{preset.referral.friends.length}</span> คน
+                      เพื่อนสมัครผ่านลิงก์คุณแล้ว <span className="font-bold text-[#831843]">{preset.referral.count}</span> คน
                     </p>
                   </div>
                 )}

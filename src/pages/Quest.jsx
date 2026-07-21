@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import DailyQuestPage from '../components/DailyQuestPage.jsx';
+import StreakCardPage from '../components/StreakCardPage.jsx';
 import { useAuth } from '../hooks/useAuth.jsx';
 import { useProfile } from '../hooks/useProfile.jsx';
 import { api } from '../lib/api.js';
@@ -52,6 +53,7 @@ export default function Quest() {
   const [apiStatus, setApiStatus] = useState('loading'); // loading | not_ready | ready
   const [claiming, setClaiming] = useState(false);
   const [claimError, setClaimError] = useState(null);
+  const [showStreakCard, setShowStreakCard] = useState(false);
 
   const loadQuest = useCallback(async () => {
     if (!token || !roadmapId) return;
@@ -166,6 +168,7 @@ export default function Quest() {
   };
 
   return (
+    <>
     <DailyQuestPage
       showStateToggle={false}
       status={status}
@@ -190,6 +193,26 @@ export default function Quest() {
       claiming={claiming}
       claimError={claimError}
       onOpenCoach={() => navigate('/coach')}
+      onShareStreak={() => setShowStreakCard(true)}
+      onInvite={() => window.dispatchEvent(new Event('luiquest-open-profile'))}
+      heightClass="min-h-full"
     />
+    {showStreakCard && (
+      <div className="fixed inset-0 z-50">
+        <StreakCardPage
+          streak={effectiveStreak}
+          totalXp={profile.total_xp}
+          userName={profile.display_name}
+          referralLink={profile.referral_code ? `${window.location.origin}/invite/${profile.referral_code}` : ''}
+          onShare={() => {
+            const url = profile.referral_code ? `${window.location.origin}/invite/${profile.referral_code}` : window.location.origin;
+            if (navigator.share) navigator.share({ title: 'ลุยเควส', text: 'มาลุยเควสเก็บ XP/streak กัน!', url }).catch(() => {});
+          }}
+          onBack={() => setShowStreakCard(false)}
+          showStateToggle={false}
+        />
+      </div>
+    )}
+    </>
   );
 }
