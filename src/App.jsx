@@ -85,6 +85,7 @@ function InviteRedeemer() {
   const location = useLocation();
   const attempted = useRef(new Set());
   const [success, setSuccess] = useState(false);
+  const [error, setError] = useState(null);
 
   useEffect(() => {
     const token = session?.access_token;
@@ -96,15 +97,18 @@ function InviteRedeemer() {
         await api.redeemReferral(code, token);
         localStorage.removeItem('luiquest_pending_invite'); // สำเร็จ — เคลียร์
         await refetch();
+        setError(null);
         setSuccess(true);
         setTimeout(() => setSuccess(false), 2800);
       } catch (err) {
-        // 4xx = terminal (ถูกชวนแล้ว/ชวนตัวเอง/บัญชีเก่าเกิน 7 วัน/โค้ดไม่มีจริง) → เคลียร์ทิ้ง ใช้ไม่ได้อยู่แล้ว เงียบ ๆ
+        // 4xx = terminal (ถูกชวนแล้ว/ชวนตัวเอง/บัญชีเก่าเกิน 30 วัน/โค้ดไม่มีจริง) → เคลียร์ทิ้งและโชว์เหตุผลจาก server
         // 5xx / network (ไม่มี status) = ชั่วคราว → เก็บ code ไว้ + ปลดจาก attempted ให้ลองใหม่รอบหน้า
         // (กันลิงก์ชวนหายเพราะเน็ตสะดุดตอน redeem — referral คือ metric ที่วิชานี้เอาไปวัด)
         const status = err?.status;
         if (status >= 400 && status < 500) {
           localStorage.removeItem('luiquest_pending_invite');
+          setError(err.message || 'ใช้ลิงก์ชวนไม่สำเร็จ');
+          setTimeout(() => setError(null), 4500);
         } else {
           attempted.current.delete(code);
         }
@@ -112,5 +116,10 @@ function InviteRedeemer() {
     })();
   }, [session?.access_token, refetch, location.key]);
 
-  return success ? <div className="fixed bottom-5 left-1/2 z-[70] -translate-x-1/2 rounded-full bg-violet-600 px-4 py-2 text-xs font-bold text-white shadow-lg">ได้รับ XP จากลิงก์ชวนแล้ว! ✨</div> : null;
+  return (
+    <>
+      {success && <div className="fixed bottom-5 left-1/2 z-[70] -translate-x-1/2 rounded-full bg-violet-600 px-4 py-2 text-xs font-bold text-white shadow-lg">ได้รับ XP จากลิงก์ชวนแล้ว! ✨</div>}
+      {error && <div className="fixed bottom-5 left-1/2 z-[70] -translate-x-1/2 rounded-full bg-rose-600 px-4 py-2 text-xs font-bold text-white shadow-lg">{error}</div>}
+    </>
+  );
 }

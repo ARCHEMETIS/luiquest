@@ -1,4 +1,4 @@
-// Scheduled Function — pre-generate เควสรายวันตอนกลางคืน (cron ใน netlify.toml, ทุก 10 นาที 19-21 UTC = ตี 2-5 ไทย, #08)
+// Scheduled Function — pre-generate เควสรายวันตอนกลางคืน (cron ใน function config, ทุก 10 นาที 19-21 UTC = ตี 2-5 ไทย, #08)
 // ไม่มีตาราง "job queue" จริงในสคีมา (ล็อกแล้วตาม supabase-schema.md) — คิวคำนวณสดจาก roadmaps/daily_quests/quest_completions ทุกรอบ
 // BATCH_SIZE = 3: scheduled function timeout 30 วิ (สั้นกว่า function ปกติ 60 วิ) — 3 คิว Gemini sequential
 // (สูงสุด ~2 model attempts × ~2 tries ต่อคิว + backoff retry RPM ~3 วิ ใน gemini.js tryChain) ประมาณการ worst-case ~15-20 วิ ยังเหลือ margin
@@ -8,6 +8,11 @@ import { generateNextQuest } from './_shared/questGenerator.js';
 
 const SCAN_LIMIT = 60; // หน้าต่างสแกน roadmap ต่อรอบ — คุมต้นทุน query ไม่ให้บวมตามจำนวนผู้ใช้
 const BATCH_SIZE = 3; // คิวที่ประมวลผลจริงต่อรอบ (ดูเหตุผล timeout ด้านบน)
+
+// schedule อยู่ใน config นี้เพื่อให้ Netlify รันแบบ scheduled-only ไม่เปิด public HTTP endpoint
+export const config = {
+  schedule: '*/10 19-21 * * *',
+};
 
 export default async (req) => {
   let nextRun = null;

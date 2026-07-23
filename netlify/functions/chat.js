@@ -9,6 +9,10 @@ const FREE_DAILY_LIMIT = 10;
 const PREMIUM_DAILY_LIMIT = 100; // soft cap กัน abuse โควต้า Gemini (#13 flag 17)
 const MAX_MESSAGE_LEN = 2000;
 const DEGRADED_REPLY = 'โค้ชไม่ว่างตอนนี้ ลองใหม่อีกครั้งได้เลยนะ 😅';
+const DEGRADED_COOLDOWN_MS = 30_000;
+
+// ตอน Gemini ล่มไม่บันทึกข้อความเพื่อไม่กินโควตา แต่กันกดซ้ำยิง chain รัว ๆ ด้วย cooldown สั้นใน function instance นี้
+const degradedCooldownByUser = new Map();
 
 function buildSystemPrompt(questContext) {
   let ctx = '';
@@ -90,6 +94,12 @@ export default async (req) => {
     return json(200, { limited: true, remaining: 0, resetAt: nextBangkokMidnightISO() });
   }
 
+  const cooldownUntil = degradedCooldownByUser.get(user.id) ?? 0;
+  if (cooldownUntil > Date.now()) {
+    return json(200, { reply: DEGRADED_REPLY, degraded: true });
+  }
+  if (cooldownUntil) degradedCooldownByUser.delete(user.id);
+
   // ----- ประวัติแชท ~10 ข้อความล่าสุดของ user (ทุก roadmap) เป็นบริบท multi-turn -----
   const { data: historyRows, error: historyErr } = await admin
     .from('chat_messages')
@@ -104,7 +114,6 @@ export default async (req) => {
     .map((m) => ({ role: m.role === 'assistant' ? 'model' : 'user', text: m.message }));
 
   let reply = null;
-  let degraded = false;
   try {
     reply = await generateText({
       prompt: message,
@@ -115,10 +124,11 @@ export default async (req) => {
     });
   } catch (err) {
     if (!err?.exhausted) return json(500, { error: String(err.message || err) });
-    degraded = true; // Gemini หมด chain ทั้งหมด — ใช้คำตอบ static แทน
+    degradedCooldownByUser.set(user.id, Date.now() + DEGRADED_COOLDOWN_MS);
+    return json(200, { reply: DEGRADED_REPLY, degraded: true });
   }
 
-  // นับข้อความของ user เสมอแม้ Gemini ล่ม (โควต้ายังตรง) — คำตอบ static ไม่บันทึกเป็นแถว assistant จริง
+  // บันทึก user message เฉพาะเมื่อ Gemini ตอบสำเร็จ — degraded reply ไม่กินโควตา
   const { error: insertUserErr } = await admin.from('chat_messages').insert({
     user_id: user.id,
     roadmap_id: questContext?.roadmapId ?? null,
@@ -127,10 +137,6 @@ export default async (req) => {
     message,
   });
   if (insertUserErr) return json(500, { error: insertUserErr.message });
-
-  if (degraded) {
-    return json(200, { reply: DEGRADED_REPLY, degraded: true });
-  }
 
   const { error: insertAssistantErr } = await admin.from('chat_messages').insert({
     user_id: user.id,

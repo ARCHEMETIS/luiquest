@@ -216,6 +216,40 @@ function normalizePhases(phases) {
   }));
 }
 
+function isNonEmptyString(value) {
+  return typeof value === 'string' && value.trim().length > 0;
+}
+
+function isValidGeneratedRoadmap(value) {
+  if (!value || value.topic_ok !== true || !Array.isArray(value.phases) || value.phases.length < 3 || value.phases.length > 6) {
+    return false;
+  }
+  if (!value.phases.every((phase) => (
+    phase &&
+    Number.isInteger(phase.phase_number) &&
+    isNonEmptyString(phase.title) &&
+    isNonEmptyString(phase.description)
+  ))) {
+    return false;
+  }
+
+  const firstQuest = value.first_quest;
+  return Boolean(
+    firstQuest &&
+    isNonEmptyString(firstQuest.title) &&
+    isNonEmptyString(firstQuest.description) &&
+    Number.isInteger(firstQuest.xp_reward) &&
+    Array.isArray(firstQuest.checklist) &&
+    firstQuest.checklist.length >= 2 &&
+    firstQuest.checklist.length <= 4 &&
+    firstQuest.checklist.every((item) => (
+      item &&
+      isNonEmptyString(item.label) &&
+      (item.link_url == null || typeof item.link_url === 'string')
+    ))
+  );
+}
+
 export const FREEFORM_SYSTEM_PROMPT = `คุณคือระบบออกแบบ "เส้นทางเรียนรู้" (roadmap) ภาษาไทยสำหรับแอปเควสรายวัน ลุยเควส (LuiQuest)
 ผู้เรียนพิมพ์หัวข้อที่อยากเก่งเอง (ไม่ใช่ 6 หัวข้อ curated ของแอป) งานของคุณคือวางโครง roadmap คร่าว ๆ (~4 เฟส) + ออกแบบเควสแรกที่ทำได้ทันทีวันนี้
 
@@ -247,6 +281,7 @@ export function buildFreeformRoadmapPrompt({ topicTitle, level, minutesPerDay })
  *  - สำเร็จ: { roadmap, quest, checklist, phase, failed: false }
  *  - Gemini หมด chain ทั้งหมด: { roadmap, quest: null, checklist: [], phase: null, failed: true }
  *    (roadmap ถูก insert เป็น status:'failed', is_active:false — ไม่กินโควตา active roadmap ของแผนฟรี ผู้ใช้เรียกซ้ำได้)
+ *  - response ผิด shape: { roadmap: null, quest: null, checklist: [], phase: null, failed: true } (ไม่ insert ข้อมูลที่โมเดลคืนมา)
  */
 export async function createFreeformRoadmap(admin, { userId, topicTitle, level, minutesPerDay }) {
   // เคยมี roadmap หัวข้อพิมพ์อิสระนี้อยู่แล้ว (จับคู่ด้วย topic_title แบบ case-insensitive/trim เพราะ topic_id เป็น null
@@ -306,6 +341,12 @@ export async function createFreeformRoadmap(admin, { userId, topicTitle, level, 
     const err = new Error(TOPIC_REJECT_MESSAGE);
     err.code = TOPIC_REJECT_CODE;
     throw err;
+  }
+
+  // ต้องได้ topic_ok=true และ shape ครบก่อนพัก roadmap เดิมหรือ insert ใด ๆ — response เพี้ยนถือเป็น generation failure
+  if (generated && !isValidGeneratedRoadmap(generated)) {
+    console.warn('[questGenerator] Gemini roadmap response invalid — treat as generation failure');
+    return { roadmap: null, quest: null, checklist: [], phase: null, failed: true };
   }
 
   if (!generated) {

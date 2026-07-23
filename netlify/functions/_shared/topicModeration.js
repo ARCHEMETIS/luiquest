@@ -50,13 +50,24 @@ function normalizeThai(text) {
     .replace(/(.)\1+/g, '$1');
 }
 
-// สำหรับอังกฤษ: ตัดแค่ตัวคั่นที่ใช้เลี่ยงคำ (p.o.r.n / f-u-c-k) แต่ **ไม่ยุบตัวซ้ำ**
-// เพื่อให้ \b ยังใช้ได้จริงและไม่ไปสร้างคำพ้องปลอม (cooking -> coking -> ชน cok)
+// สำหรับอังกฤษ: ตัดแค่เครื่องหมายคั่นที่ใช้เลี่ยงคำ (p.o.r.n / f-u-c-k) แต่เก็บ whitespace ไว้
+// เพื่อให้ \b ยังเห็นขอบเขตของวลีหลายคำ (nude drawing / rape culture / anal anatomy)
 function deobfuscateLatin(text) {
   return String(text ?? '')
     .toLowerCase()
     .replace(/[​-‍﻿]/g, '')
-    .replace(/(?<=[a-z])[.\-_*\s](?=[a-z])/g, '');
+    .replace(/(?<=[a-z])[-._*](?=[a-z])/g, '');
+}
+
+// leetspeak + ยุบตัวอักษรซ้ำเป็น variant แยก — ต้องคงข้อความปกติไว้ด้วยเพื่อไม่ให้ cooking/analysis ถูกแปลงจนเกิด false positive
+const LATIN_LEET_MAP = { 0: 'o', 1: 'i', 3: 'e', 4: 'a', 5: 's', 7: 't', '@': 'a', $: 's' };
+
+function normalizeLatinLeet(text) {
+  return text.replace(/[013457@$]/g, (char) => LATIN_LEET_MAP[char] ?? char);
+}
+
+function collapseLatinRepeats(text) {
+  return text.replace(/([a-z])\1+/g, '$1');
 }
 
 /**
@@ -75,8 +86,11 @@ export function checkTopicText(rawText) {
   }
 
   const latin = deobfuscateLatin(rawText);
-  for (const word of EN_BLOCKED) {
-    if (new RegExp(`\\b${word}\\b`).test(latin)) return { ok: false, matched: word };
+  const latinVariants = [latin, collapseLatinRepeats(normalizeLatinLeet(latin))];
+  for (const variant of latinVariants) {
+    for (const word of EN_BLOCKED) {
+      if (new RegExp(`\\b${word}\\b`).test(variant)) return { ok: false, matched: word };
+    }
   }
 
   return { ok: true };

@@ -485,7 +485,7 @@ alter table public.push_subscriptions    enable row level security;
 create policy "profiles_select_own" on public.profiles
   for select to authenticated using (auth.uid() = id);
 
--- อัปเดตได้เฉพาะแถวตัวเอง — แต่ห้ามแก้ is_premium/premium_until/is_admin/total_xp เอง
+-- อัปเดตได้เฉพาะแถวตัวเอง — แต่ห้ามแก้ฟิลด์สิทธิ์/progress/ระบบเอง เหลือ display_name/avatar_url/opt-out ให้ user แก้ได้
 create policy "profiles_update_own" on public.profiles
   for update to authenticated
   using (auth.uid() = id)
@@ -495,6 +495,14 @@ create policy "profiles_update_own" on public.profiles
     and premium_until is not distinct from (select premium_until from public.profiles where id = auth.uid())
     and is_admin    = (select is_admin    from public.profiles where id = auth.uid())
     and total_xp    = (select total_xp    from public.profiles where id = auth.uid())
+    and current_streak = (select current_streak from public.profiles where id = auth.uid())
+    and longest_streak  = (select longest_streak  from public.profiles where id = auth.uid())
+    and last_quest_date is not distinct from (select last_quest_date from public.profiles where id = auth.uid())
+    and last_active_at  is not distinct from (select last_active_at  from public.profiles where id = auth.uid())
+    and grade           is not distinct from (select grade           from public.profiles where id = auth.uid())
+    and referral_code   = (select referral_code   from public.profiles where id = auth.uid())
+    and referred_by     is not distinct from (select referred_by     from public.profiles where id = auth.uid())
+    and created_at      = (select created_at      from public.profiles where id = auth.uid())
   );
 
 -- admin อ่านได้ทุกแถว (หน้า admin)
@@ -636,4 +644,3 @@ join (values
   ('python','advanced',     'เควสแรก: เขียนฟังก์ชัน + จัดการ error',      'ต่อยอดสำหรับคนเขียนเป็นแล้ว')
 ) as v(slug, level, title, description) on t.slug = v.slug
 on conflict (topic_id, level) do nothing;
-

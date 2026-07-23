@@ -8,8 +8,9 @@ import { getAdminClient } from './_shared/supabaseAdmin.js';
 const REFERRAL_XP_BONUS = 20;
 
 // เจตนา referral คือ "สมัครใหม่ผ่านลิงก์ชวน" — บัญชีเก่าไม่ควรวนกลับมา redeem เก็บ XP ได้
-// (scrutinize 2026-07-15) ให้เวลา 7 วันหลังสมัครเผื่อคนเพิ่งเริ่มใช้ค่อยกรอกโค้ด — ตัวเลขปรับได้ ไม่ล็อกในสเปก
-const REDEEM_WINDOW_DAYS = 7;
+// ขยายเวลาเป็น 30 วันให้เพื่อนร่วมชั้นที่ได้รับลิงก์ช้ากว่ายัง redeem ได้
+const REDEEM_WINDOW_DAYS = 30;
+const REDEEM_WINDOW_EXPIRED_CODE = 'REFERRAL_REDEEM_WINDOW_EXPIRED';
 
 export default async (req) => {
   if (req.method !== 'POST') return json(405, { error: 'Method Not Allowed' });
@@ -26,7 +27,10 @@ export default async (req) => {
   // user.created_at มาจาก Supabase Auth (ผู้ใช้แก้เองไม่ได้) — เชื่อถือได้กว่าข้อมูลฝั่ง client
   const accountAgeMs = Date.now() - new Date(user.created_at).getTime();
   if (accountAgeMs > REDEEM_WINDOW_DAYS * 24 * 60 * 60 * 1000) {
-    return json(403, { error: 'ลิงก์ชวนใช้ได้เฉพาะบัญชีที่สมัครใหม่ไม่เกิน 7 วัน' });
+    return json(403, {
+      error: `ลิงก์ชวนใช้ได้เฉพาะบัญชีที่สมัครใหม่ไม่เกิน ${REDEEM_WINDOW_DAYS} วัน`,
+      code: REDEEM_WINDOW_EXPIRED_CODE,
+    });
   }
 
   const admin = getAdminClient();

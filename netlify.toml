@@ -6,12 +6,6 @@
 [functions]
   node_bundler = "esbuild"
 
-# ── Scheduled Function: pre-generate เควสตอนกลางคืน ──
-# Netlify cron = UTC เสมอ; ตี 2–5 ไทย = 19:00–21:59 UTC (วันก่อนหน้า)
-# รันทุก 10 นาทีในหน้าต่างนี้ = 18 รอบ/คืน — batch เล็ก จบใน <10 วิ (ดู deploy-plan.md sec.3)
-[functions."pre-generate-quests"]
-  schedule = "*/10 19-21 * * *"
-
 # ── SPA fallback: path ที่ไม่ใช่ไฟล์จริง → index.html (React Router) ──
 [[redirects]]
   from = "/*"
