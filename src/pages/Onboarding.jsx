@@ -8,7 +8,7 @@ import { fetchTopics, TOPIC_ID_TO_SLUG, LEVEL_ID_TO_LEVEL } from '../lib/topics.
 
 export default function Onboarding() {
   const { session } = useAuth();
-  const { activeRoadmapId: roadmapId, loading } = useProfile();
+  const { activeRoadmapId: roadmapId, loading, refetch } = useProfile();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const token = session?.access_token;
@@ -39,8 +39,17 @@ export default function Onboarding() {
       // generate-quest ตอบ 200 เสมอแม้ Gemini หมด chain ทั้งหมด (roadmap ถูก mark failed) — ต้องเช็ค flag เอง
       if (result.failed) throw new Error('สร้างเควสไม่สำเร็จ ระบบขัดข้องชั่วคราว ลองใหม่อีกครั้ง');
     }
-    // ปล่อยให้หน้า "พร้อมลุย" โชว์แป๊บนึงก่อนค่อยพาไปหน้าเควสจริง
-    setTimeout(() => navigate('/quest', { replace: true }), 1200);
+    // ปล่อยให้หน้า "พร้อมลุย" โชว์แป๊บนึง แล้วค่อย refetch + พาไปหน้าเควสจริง
+    //
+    // ต้อง refetch เสมอ: useProfile เป็น context ที่ fetch /me ตอนล็อกอินครั้งเดียว ถ้าไม่โหลดใหม่
+    // หน้า /quest จะยังเห็นข้อมูลเก่าที่ "ยังไม่มี roadmap" แล้วขึ้นว่าไม่มีเควส/เด้งกลับ onboarding
+    // จนกว่าผู้ใช้จะรีเฟรชหน้าเอง (เจ้าของเจอตอนใช้จริง 23 ก.ค.: ต้องรีเฟรชทุกครั้งหลังสร้างเควส)
+    // วางไว้ใน timeout ไม่ใช่ก่อนหน้านี้ เพราะ refetch ทำให้ roadmapId มีค่า -> guard ด้านบนเด้งออกทันที
+    // ฉากฉลอง "เควสแรกพร้อมแล้ว 🎉" จะโดนข้ามไป
+    setTimeout(async () => {
+      await refetch();
+      navigate('/quest', { replace: true });
+    }, 1200);
   };
 
   return (

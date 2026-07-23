@@ -209,6 +209,38 @@ export default function ProfileDrawer({ open, onClose, showStateToggle = false }
   const [switchingId, setSwitchingId] = useState(null);
   const [switchMsg, setSwitchMsg] = useState("");
   const [showCapUpsell, setShowCapUpsell] = useState(false); // เด้งกล่องขายพรีเมียมเมื่อกด "เพิ่มหัวข้อใหม่" ตอนครบเพดาน
+
+  // ---- ปัดนิ้วปิดแถบ (แบบเฟซบุ๊ก) ----
+  // dragX = ระยะที่นิ้วลากไปทางซ้าย (px) ระหว่างลากให้แถบวิ่งตามนิ้วจริง ๆ ไม่ใช่รอปล่อยแล้วค่อยเด้ง
+  // axis: ตัดสินครั้งเดียวต่อ 1 การแตะว่าเป็นการลากแนวนอน (ปิดแถบ) หรือแนวตั้ง (เลื่อนเนื้อหาในแถบ)
+  // เพื่อไม่ให้สองอย่างแย่งกัน — เลื่อนอ่านเนื้อหายาว ๆ ต้องไม่เผลอปิดแถบ
+  const [dragX, setDragX] = useState(0);
+  const dragRef = useRef(null);
+
+  const onTouchStart = (e) => {
+    const t = e.touches[0];
+    dragRef.current = { x: t.clientX, y: t.clientY, axis: null };
+  };
+  const onTouchMove = (e) => {
+    const d = dragRef.current;
+    if (!d) return;
+    const t = e.touches[0];
+    const dx = t.clientX - d.x;
+    const dy = t.clientY - d.y;
+    if (!d.axis) {
+      if (Math.abs(dx) < 8 && Math.abs(dy) < 8) return; // ยังสั้นเกินกว่าจะตัดสินทิศ
+      d.axis = Math.abs(dx) > Math.abs(dy) ? "x" : "y";
+    }
+    if (d.axis !== "x") return;
+    setDragX(Math.max(0, -dx)); // ลากไปทางขวาไม่ทำอะไร (แถบชิดขอบซ้ายอยู่แล้ว)
+  };
+  const onTouchEnd = () => {
+    const d = dragRef.current;
+    dragRef.current = null;
+    // ลากเกิน ~1 ใน 3 ของความกว้างแถบ (หรือ 90px) = ตั้งใจปิด; ไม่ถึงก็ดีดกลับที่เดิม
+    if (d?.axis === "x" && dragX > 90) requestClose();
+    setDragX(0);
+  };
   const [copied, setCopied] = useState(false);
   const [shareMsg, setShareMsg] = useState("");
   const timers = useRef({});
@@ -288,6 +320,12 @@ export default function ProfileDrawer({ open, onClose, showStateToggle = false }
 
           {/* ตัวแถบเมนู — สไลด์จากซ้าย แบบเฟซบุ๊ก */}
           <aside
+            onTouchStart={onTouchStart}
+            onTouchMove={onTouchMove}
+            onTouchEnd={onTouchEnd}
+            onTouchCancel={onTouchEnd}
+            // ระหว่างลากด้วยนิ้ว: ปิด transition แล้วขยับตามนิ้วจริง ๆ ปล่อยเมื่อไหร่ค่อยคืน transition ให้ดีดกลับ/ปิดแบบนุ่ม
+            style={dragX ? { transform: `translateX(-${dragX}px)`, transition: "none" } : undefined}
             className={`absolute inset-y-0 left-0 z-50 flex w-[78%] max-w-[280px] flex-col border-r-2 border-[#FBCFE8] bg-gradient-to-b from-white to-[#FDF2F8] shadow-[8px_0_30px_rgba(139,92,246,.20)] transition-transform duration-300 ease-out ${
               entered ? "translate-x-0" : "-translate-x-full"
             }`}

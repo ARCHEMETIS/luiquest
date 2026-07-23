@@ -35,7 +35,13 @@ const SEARCH_PATTERNS = [
   { hostname: 'www.google.com', pathname: '/search' },
 ];
 
-// (ก) หน้าหลักของโดเมน whitelist หรือ (ข) ลิงก์ค้นหาตาม pattern — ห้ามแต่ง deep URL เด็ดขาด
+// อนุญาตเฉพาะ (ก) ลิงก์ค้นหาตาม pattern — ห้ามแต่ง deep URL เด็ดขาด
+//
+// อัพเดต 23 ก.ค. 2026 (เจ้าของเจอตอนใช้จริง): เดิมอนุญาต "หน้าหลัก" ของโดเมน whitelist ด้วย
+// ผลคือเควสที่ Gemini สร้างมักแนบ https://www.youtube.com/ เฉย ๆ (พรอมพ์ก็สั่งให้ใช้หน้าหลัก)
+// ผู้เรียนกดแล้วไปโผล่หน้าแรก YouTube ไม่ได้บทเรียนอะไรเลย — ลิงก์ที่ไม่พาไปถึงเนื้อหาก็ไม่ต่างจากไม่มีลิงก์
+// ตอนนี้หน้าหลักเปล่า ๆ ถือว่า "ไม่ผ่าน" แล้ว sanitizeChecklistLinks จะแทนด้วยลิงก์ค้นหาจากชื่อขั้นตอน+หัวข้อ
+// (ยังคงกฎเดิมที่ห้ามแต่ง URL ลึกไว้ครบ — เราไม่เคยเดา URL ที่อาจไม่มีจริง)
 export function isAllowedLink(url) {
   let u;
   try {
@@ -44,9 +50,6 @@ export function isAllowedLink(url) {
     return false;
   }
   if (u.protocol !== 'https:') return false;
-
-  const isHomepage = (u.pathname === '/' || u.pathname === '') && WHITELIST_DOMAINS.includes(u.hostname);
-  if (isHomepage) return true;
 
   const isSearch = SEARCH_PATTERNS.some((p) => p.hostname === u.hostname && u.pathname === p.pathname);
   return isSearch;

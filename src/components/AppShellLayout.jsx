@@ -68,12 +68,48 @@ export default function AppShellLayout() {
   const name = profile?.display_name || "นักผจญภัย";
   const initial = (name.charAt(0) || "?").toUpperCase();
 
-  // เปิด drawer จากที่อื่นได้ผ่าน event (ปุ่ม "ชวนเพื่อน" ในหน้าเควส/อันดับ dispatch มา)
+  // เปิด drawer จากที่อื่นได้ผ่าน event (ปุ่ม "ชวนเพื่อน" ในหน้าเควส/อันดับ + อวตารในหน้าเควส dispatch มา)
   useEffect(() => {
     const openDrawer = () => setProfileOpen(true);
     window.addEventListener("luiquest-open-profile", openDrawer);
     return () => window.removeEventListener("luiquest-open-profile", openDrawer);
   }, []);
+
+  // ปัดนิ้วจากขอบซ้ายเพื่อเปิดแถบโปรไฟล์ (แบบเฟซบุ๊ก) — คู่กับการลากปิดที่อยู่ใน ProfileDrawer
+  // เริ่มนับเฉพาะนิ้วที่แตะในโซนขอบ 24px เท่านั้น ไม่งั้นจะไปกวนการปัด/เลื่อนอย่างอื่นกลางจอ
+  useEffect(() => {
+    if (profileOpen) return; // เปิดอยู่แล้วปล่อยให้ ProfileDrawer จัดการท่าปัดเอง
+    let start = null;
+    const onStart = (e) => {
+      const t = e.touches[0];
+      start = t && t.clientX <= 24 ? { x: t.clientX, y: t.clientY } : null;
+    };
+    const onMove = (e) => {
+      if (!start) return;
+      const t = e.touches[0];
+      const dx = t.clientX - start.x;
+      const dy = Math.abs(t.clientY - start.y);
+      if (dx > 60 && dx > dy) {
+        setProfileOpen(true); // ลากขวาพอสมควร + เป็นแนวนอนชัดเจน
+        start = null;
+      } else if (dy > 40) {
+        start = null; // กลายเป็นการเลื่อนหน้าแนวตั้ง ยกเลิกท่านี้
+      }
+    };
+    const onEnd = () => {
+      start = null;
+    };
+    window.addEventListener("touchstart", onStart, { passive: true });
+    window.addEventListener("touchmove", onMove, { passive: true });
+    window.addEventListener("touchend", onEnd, { passive: true });
+    window.addEventListener("touchcancel", onEnd, { passive: true });
+    return () => {
+      window.removeEventListener("touchstart", onStart);
+      window.removeEventListener("touchmove", onMove);
+      window.removeEventListener("touchend", onEnd);
+      window.removeEventListener("touchcancel", onEnd);
+    };
+  }, [profileOpen]);
 
   return (
     <div
@@ -96,12 +132,8 @@ export default function AppShellLayout() {
       `}</style>
 
       {/* header: โลโก้+มาสคอตจิ๋ว + อวตารโปรไฟล์ (กดเปิด ProfileDrawer) */}
+      {/* โปรไฟล์อยู่ซ้าย โลโก้อยู่ขวา — แถบเมนูสไลด์ออกมาจากขอบซ้าย ปุ่มที่เปิดมันจึงควรอยู่ฝั่งเดียวกัน */}
       <header className="z-10 flex shrink-0 items-center justify-between gap-2 border-b border-[#FBCFE8] bg-gradient-to-b from-white to-[#FDF2F8] px-3 py-1.5">
-        <div className="flex items-center gap-1.5">
-          <LuiQuestFavicon size={26} />
-          <HeaderMascot size={24} />
-          <span className="font-heading text-xs font-bold">ลุยเควส</span>
-        </div>
         <button
           onClick={() => setProfileOpen(true)}
           aria-label={`เปิดโปรไฟล์ของ ${name}`}
@@ -116,6 +148,11 @@ export default function AppShellLayout() {
           )}
           <span className="max-w-[100px] truncate text-[10px] font-bold text-[#831843]">{name}</span>
         </button>
+        <div className="flex items-center gap-1.5">
+          <LuiQuestFavicon size={26} />
+          <HeaderMascot size={24} />
+          <span className="font-heading text-xs font-bold">ลุยเควส</span>
+        </div>
       </header>
 
       {/* พื้นที่เนื้อหา (หน้าจาก routing) — ซ่อน scrollbar เมาส์แบบแอพมือถือ */}
