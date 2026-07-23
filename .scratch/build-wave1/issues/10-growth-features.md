@@ -1,7 +1,7 @@
 # ฟีเจอร์โต Wave 1: ลิงก์ชวน + leaderboard + การ์ดแชร์ + /stats
 
 Type: task
-Status: partial (14 ก.ค. 2026 — backend ลิงก์ชวนเสร็จ, ที่เหลือรอ UI)
+Status: closed (21 ก.ค. 2026 — UI ที่เหลือ wire ครบใน ticket 09, commit `3e32733`/`0811722`)
 Blocked by: 06, 09
 
 ## ผลลัพธ์บางส่วน (14 ก.ค. 2026)
@@ -23,3 +23,15 @@ Blocked by: 06, 09
 ## เสร็จเมื่อ
 
 สมัครผ่านลิงก์ชวนแล้ว XP เข้าทั้งคู่ + ยอดนับถูก, leaderboard เรียงถูก, การ์ด render ออกภาพได้, /stats แสดงตัวเลขจริง — ยืนยันด้วย `/verify`
+
+## ปิด ticket (21 ก.ค. 2026)
+
+UI ทั้ง 3 ส่วนที่ค้างถูก wire ครบในรอบเดียวกับ ticket 09 (รายละเอียดเต็ม + รีวิว 2 รอบอยู่ที่ [09-integrate-ui.md](09-integrate-ui.md)):
+
+- ✅ **ลิงก์ชวน** — flow ครบ `/invite/<code>` → เก็บโค้ดไว้ → หลังล็อกอิน redeem อัตโนมัติ (`api.redeemReferral` + InviteRedeemer ที่เก็บ pending code ไว้ retry ถ้า 5xx/network) + ลิงก์/ยอดเพื่อนโชว์ใน ProfileDrawer (นับจากตาราง `referrals`)
+- ✅ **Leaderboard** — อ่าน view ตรงผ่าน `supabaseClient`, ใช้ rank จริงจาก view (ไม่ recompute จาก index), badge "คุณ", กันคน opt-out แอบอ้าง #1, few-state
+- ✅ **การ์ดแชร์ streak** — overlay ในหน้าเควส, ปุ่มแชร์ copy ได้จริงบนเดสก์ท็อป (เซฟภาพใช้กดค้าง ไม่พึ่ง lib — follow-up เล็ก)
+- ✅ **/stats** — หน้าเดียวสาธารณะ (ไม่มี `:handle`, ไม่มี PII), ตัดตัวเลขสุ่ม `useLiveTick` ออกให้เป็นเลขจริงล้วน (หน้านี้ใช้ pitch อาจารย์), มี error state กัน crash ตอน fetch view ล้ม
+- ✅ e2e ด้วยเบราว์เซอร์จริง + บัญชีเจ้าของ: /stats, /leaderboard, ProfileDrawer, StreakCard render ครบด้วย real data, zero console errors
+
+⬜ **ยังไม่ได้ทดสอบจริง:** redeem ลิงก์ชวนแบบ end-to-end ด้วยบัญชีที่สองบน production (OAuth ทำ headless ไม่ได้) + window 7 วันหลังสมัคร (`REDEEM_WINDOW_DAYS`) → อยู่ในเช็คลิสต์ ticket 11

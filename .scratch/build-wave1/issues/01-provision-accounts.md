@@ -1,8 +1,8 @@
 # จัดเตรียมบัญชี/โปรเจกต์คลาวด์ทั้งหมด
 
 Type: task
-Status: in_progress
-Assignee: owner + claude (session 13 ก.ค. 2026)
+Status: done (14 ก.ค. 2026)
+Assignee: owner + claude (session 13–14 ก.ค. 2026)
 Blocked by: —
 
 ## งานที่ต้องทำ
@@ -25,3 +25,9 @@ Blocked by: —
 - **Google OAuth** ✅ consent screen (External, published **production**) + client `luiquest-web` (Client ID `738044975865-...`, redirect `https://lvmytvdruufgfvijmjhl.supabase.co/auth/v1/callback`); เปิด Google provider ใน Supabase + ใส่ Client ID/Secret; Site URL = `luiquest.netlify.app`; redirect dev `localhost:8888`
 - **Netlify site** ⏸️ ยังไม่ทำ — รอ repo จาก ticket 02 (import repo → ตั้งชื่อ site → ใส่ env 5 ตัว)
 - **ค้างเล็กน้อย:** ปิด Email/Password provider ใน Supabase (ตาม #04 Google อย่างเดียว) — ไม่กระทบการทำงาน ทำตอนไหนก็ได้
+
+## ปิด ticket (15 ก.ค. 2026)
+
+- **Netlify site** ✅ สร้างจริงแล้วชื่อ `luiquest` (`luiquest.netlify.app`) เชื่อม GitHub `ARCHEMETIS/luiquest` branch `main` + import env 5 ตัวจาก `.env` ผ่าน UI → credential ครบทั้ง 5 ตามเงื่อนไข "เสร็จเมื่อ"
+- **โควต้า Gemini จริงกับ AI Studio dashboard** ยังไม่ได้เช็ค → ยกไปเป็นข้อหนึ่งของ ticket 11 (ไม่บล็อกงานอื่น)
+- ค้างเล็กน้อยที่ยังไม่ทำ: ปิด Email/Password provider ใน Supabase
