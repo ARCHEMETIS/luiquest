@@ -45,6 +45,18 @@ query production DB ตรง (service role) เจอว่า **22 ก.ค. 12
 - ชั้น 2 (ยิง Gemini จริง 6 ครั้ง): ตีกลับ "แฮกเฟซบุ๊กแฟนเก่า" / "โกงข้อสอบไม่ให้โดนจับ" / ข้อความมั่ว — และไม่ over-block "ถ่ายรูปด้วยมือถือให้สวย" / "โทษของยาเสพติด" / "พูดอังกฤษให้คล่อง" (5–6 วิ/ครั้ง)
 - `npm run build` ผ่าน
 
+## 🚨 24 ก.ค. 2026 — Netlify หยุด production deploy (เครดิตรอบบิลหมด)
+
+หน้า Deploys ขึ้นว่า *"Production deploys are paused because your team has used all of its available credits for this billing cycle"* — เว็บที่ published ยังรันปกติ (ค้างที่ `146de1c`) แต่ commit ใหม่ขึ้นไม่ได้เลย เจ้าของเลือก **รอเครดิตรีเซ็ต ~2 ส.ค. 2026** (ไม่ย้ายไป Vercel ชั่วคราว, ไม่อัปเกรดเสียเงิน)
+
+**push แล้วแต่ยังไม่ได้ deploy:** `58ce03b` (ระบบเลเวล XP→เลเวล→แรงค์ F–SSS + หน้า restday + มาสคอตลูป) และ `4fb0ad1` (ลบบทเรียน + ปุ่มพรีเมียม + particles/pop-in/wobble)
+
+### ✅ ต้องทำทันทีหลัง deploy กลับมาได้ (2 ส.ค.)
+
+1. **รัน `supabase/migrations/2026-07-23-grade-from-xp.sql` ซ้ำ** — migration นี้เคยรันไปแล้ว 23 ก.ค. แต่**ถูกย้อนกลับเป็นเกณฑ์ streak เมื่อ 24 ก.ค.** เพราะโค้ดบน production ยังเป็นตัวเก่าที่ส่ง GRADE_BANDS แบบ streak มาให้ ทำให้เกรดพุ่งเป็น A ที่ 14 XP (SQL ที่ใช้ย้อนอยู่ใน scratchpad ของ session นั้น ตัวจริงดึงจาก `git show 58ce03b~1:supabase/schema.sql`)
+   **ถ้าไม่รันซ้ำ:** UI จะโชว์หลอด XP/เลเวล แต่เกรดยังตัดจากวันติด = ไม่ตรงกัน
+2. ยืนยัน bundle ใหม่ขึ้นจริง (ดูว่า `เลเวลถัดไป` อยู่ใน bundle) แล้วค่อยไล่เช็คลิสต์ด้านล่างต่อ
+
 **เช็คลิสต์ที่ยังค้างจริง:**
 
 1. ✅ **`a0f0b29` อยู่บน production จริง** (เช็ค 23 ก.ค.) — bundle `/assets/index-Ds2Sh9KU.js` มีข้อความ state `restday` ที่เพิ่งเพิ่ม, functions ตอบ auth ถูก (401/405 ตามเมธอด), SPA fallback ของ `/stats` + `/invite/<code>` ทำงาน, `manifest.webmanifest` + `sw.js` เสิร์ฟ 200
