@@ -9,12 +9,42 @@ import { generateNextQuest } from './_shared/questGenerator.js';
 const SCAN_LIMIT = 60; // หน้าต่างสแกน roadmap ต่อรอบ — คุมต้นทุน query ไม่ให้บวมตามจำนวนผู้ใช้
 const BATCH_SIZE = 3; // คิวที่ประมวลผลจริงต่อรอบ (ดูเหตุผล timeout ด้านบน)
 
-// schedule อยู่ใน config นี้เพื่อให้ Netlify รันแบบ scheduled-only ไม่เปิด public HTTP endpoint
+// schedule อยู่ใน config นี้ (แทน netlify.toml) ตามรูปแบบที่ Netlify แนะนำ
 export const config = {
   schedule: '*/10 19-21 * * *',
 };
 
+// ── กันคนนอกยิงฟังก์ชันนี้เอง (ยืนยันจริง 23 ก.ค. 2026) ────────────────────────────────
+// ย้าย schedule มาไว้ใน config แล้ว **endpoint ก็ยังเปิดสาธารณะอยู่**: POST จากเครื่องนอก
+// ยังได้ 200 และประมวลผลจริง (ทดสอบแล้วเห็น processed:1) — เอกสารที่บอกว่า scheduled function
+// ไม่มี public URL ใช้ไม่ได้กับ setup นี้ ฟังก์ชันนี้รันด้วย service role + ยิง Gemini ได้
+//
+// ด่านที่ใช้: อนุญาตให้ "ทำงานจริง" เฉพาะในหน้าต่าง cron เท่านั้น (19:00-21:59 UTC = ตี 2-5 ไทย)
+// - cron ของจริงรันในหน้าต่างนี้อยู่แล้ว → ไม่มีทางทำ cron พัง ซึ่งสำคัญกว่าการกันคนนอกแบบเป๊ะ ๆ
+// - นอกหน้าต่าง คนนอกยิงเท่าไหร่ก็ไม่เกิดงาน ไม่แตะ DB ไม่แตะ Gemini
+// - ในหน้าต่าง ถึงยิงได้ก็ทำได้แค่งานที่ cron จะทำอยู่แล้ว (คิว eligibility คำนวณสด เควสที่สร้างแล้ว
+//   ไม่ถูกสร้างซ้ำ) จึงไม่มีทางใช้ปั๊มโควตา Gemini ให้หมดวัน
+// ตั้ง PREGEN_BYPASS_SECRET ใน Netlify env แล้วส่ง header x-pregen-secret มาให้ตรง เพื่อสั่งรันเองนอกเวลา
+const CRON_WINDOW_UTC_HOURS = [19, 20, 21];
+
+function isInsideCronWindow(now = new Date()) {
+  return CRON_WINDOW_UTC_HOURS.includes(now.getUTCHours());
+}
+
+function hasBypassSecret(req) {
+  const expected = typeof Netlify !== 'undefined' ? Netlify.env.get('PREGEN_BYPASS_SECRET') : process.env.PREGEN_BYPASS_SECRET;
+  return Boolean(expected) && req.headers.get('x-pregen-secret') === expected;
+}
+
 export default async (req) => {
+  // นอกหน้าต่าง cron = ไม่ทำอะไรเลย (ดูเหตุผลด้านบน) — ตอบสั้น ๆ ไม่บอกสถานะภายในของระบบ
+  if (!isInsideCronWindow() && !hasBypassSecret(req)) {
+    console.warn('[pre-generate-quests] ถูกเรียกนอกหน้าต่าง cron — ไม่ทำงาน');
+    return new Response(JSON.stringify({ ok: true, skipped: 'outside-window' }), {
+      headers: { 'Content-Type': 'application/json' },
+    });
+  }
+
   let nextRun = null;
   try {
     const body = await req.json();
@@ -144,7 +174,10 @@ export default async (req) => {
 
   console.log('[pre-generate-quests]', JSON.stringify(summary));
 
-  return new Response(JSON.stringify(summary), {
+  // ตอบกลับแบบสรุปตัวเลขล้วน — ไม่คืน roadmap_ids_processed ออกไปข้างนอก (endpoint นี้สาธารณะ
+  // ในหน้าต่าง cron จึงไม่ควรบอก id ของผู้ใช้; รายละเอียดเต็มอยู่ใน log ฝั่ง Netlify แล้ว)
+  const { roadmap_ids_processed: _ids, ...publicSummary } = summary;
+  return new Response(JSON.stringify(publicSummary), {
     headers: { 'Content-Type': 'application/json' },
   });
 };
