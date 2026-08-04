@@ -408,8 +408,10 @@ export default function ProfileDrawer({ open, onClose, showStateToggle = false }
             onTouchMove={onTouchMove}
             onTouchEnd={onTouchEnd}
             onTouchCancel={onTouchEnd}
+            // touchAction: 'pan-y' = บอก browser ว่า "แนวตั้งเลื่อนได้ตามปกติ แต่แนวนอนเป็นงานเรา"
+            //   → iPad Safari เดิมกินการลากแนวนอนไปเอง (มือถือที่ติดตั้ง PWA แล้วไม่เจอ) ทำให้ลากปิดไม่ได้
             // ระหว่างลากด้วยนิ้ว: ปิด transition แล้วขยับตามนิ้วจริง ๆ ปล่อยเมื่อไหร่ค่อยคืน transition ให้ดีดกลับ/ปิดแบบนุ่ม
-            style={dragX ? { transform: `translateX(-${dragX}px)`, transition: "none" } : undefined}
+            style={{ touchAction: "pan-y", ...(dragX ? { transform: `translateX(-${dragX}px)`, transition: "none" } : {}) }}
             className={`absolute inset-y-0 left-0 z-50 flex w-[78%] max-w-[280px] flex-col border-r-2 border-[#FBCFE8] bg-gradient-to-b from-white to-[#FDF2F8] shadow-[8px_0_30px_rgba(139,92,246,.20)] transition-transform duration-300 ease-out ${
               entered ? "translate-x-0" : "-translate-x-full"
             }`}

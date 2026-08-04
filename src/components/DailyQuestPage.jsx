@@ -239,6 +239,9 @@ export default function DailyQuestPage({
   const [ui, setUi] = useState(initialState);
   const [checked, setChecked] = useState([]);
   const [claimResult, setClaimResult] = useState(null);
+  // doneDismissed = กดไปต่อจาก celebration แล้วให้ดูสถิติของวันนั้นต่อได้ทันที
+  // ใช้ local view เพราะ status จริงจาก parent ยังเป็น ready จนกว่าจะข้ามวัน
+  const [doneDismissed, setDoneDismissed] = useState(false);
   const ctaRef = useRef(null);
   // intro = ช่วงที่ชุด pop-in กำลังเล่น (ตอนหน้าโผล่/ได้เควสใหม่) — พอจบแล้วต้องถอด style animation ทิ้ง
   // ไม่งั้นเวลาแถวไหนสลับไปเล่นท่าสั่นแล้วสลับกลับ มันจะเด้ง pop-in ใหม่ทั้งที่อยู่บนจอมานานแล้ว
@@ -248,7 +251,8 @@ export default function DailyQuestPage({
   const [tapped, setTapped] = useState(null);
   const tapTimer = useRef(null);
 
-  const effectiveUi = claimResult ? claimResult.kind : status ?? ui;
+  const baseUi = claimResult ? claimResult.kind : status ?? ui;
+  const effectiveUi = doneDismissed && baseUi === "done" ? "restday" : baseUi;
   const isQuestState = QUEST_STATES.includes(effectiveUi);
   const allChecked = checklistItems.length > 0 && checked.length === checklistItems.length;
   const effectiveStats =
@@ -262,6 +266,7 @@ export default function DailyQuestPage({
   useEffect(() => {
     setChecked([]);
     setClaimResult(null);
+    setDoneDismissed(false);
     setIntro(true);
     const t = setTimeout(() => setIntro(false), 1200); // > หน่วงสูงสุด (.65s) + ความยาวท่า (.42s)
     return () => clearTimeout(t);
@@ -364,7 +369,10 @@ export default function DailyQuestPage({
           {PREVIEW_STATES.map((s) => (
             <button
               key={s.id}
-              onClick={() => setUi(s.id)}
+              onClick={() => {
+                setDoneDismissed(false);
+                setUi(s.id);
+              }}
               className={`whitespace-nowrap rounded-full px-2.5 py-1 text-[10px] transition ${
                 ui === s.id
                   ? "bg-[#8B5CF6] text-white"
@@ -490,6 +498,12 @@ export default function DailyQuestPage({
             — อวดให้เพื่อนอิจฉาหน่อยมั้ย
           </p>
           <div className="mt-6 flex w-full max-w-[280px] flex-col gap-2.5">
+            <button
+              onClick={() => setDoneDismissed(true)}
+              className="w-full rounded-full bg-gradient-to-r from-violet-500 to-pink-500 px-4 py-2.5 font-heading text-sm font-bold text-white shadow-[0_10px_24px_rgba(139,92,246,.30)] transition hover:-translate-y-0.5 hover:shadow-[0_14px_30px_rgba(139,92,246,.42)] hover:brightness-105 active:translate-y-px"
+            >
+              ไปต่อ ดูความคืบหน้า
+            </button>
             <button
               onClick={() => onShareStreak?.()}
               className="w-full rounded-full bg-gradient-to-r from-violet-500 to-pink-500 px-4 py-2.5 font-heading text-sm font-bold text-white shadow-[0_10px_24px_rgba(139,92,246,.30)] transition hover:-translate-y-0.5 hover:shadow-[0_14px_30px_rgba(139,92,246,.42)] hover:brightness-105 active:translate-y-px"

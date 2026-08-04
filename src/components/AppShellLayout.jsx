@@ -76,20 +76,22 @@ export default function AppShellLayout() {
   }, []);
 
   // ปัดนิ้วจากขอบซ้ายเพื่อเปิดแถบโปรไฟล์ (แบบเฟซบุ๊ก) — คู่กับการลากปิดที่อยู่ใน ProfileDrawer
-  // เริ่มนับเฉพาะนิ้วที่แตะในโซนขอบ 24px เท่านั้น ไม่งั้นจะไปกวนการปัด/เลื่อนอย่างอื่นกลางจอ
+  // โซนขอบ 44px (เดิม 24): iPad Safari สงวนขอบซ้ายสุดไว้ทำ back-gesture ของตัวเอง จะไม่ส่ง touch
+  //   ที่ขอบจริง ๆ มาให้เรา ต้องเผื่อให้เริ่มลึกเข้ามาได้ (บนมือถือที่ติดตั้งเป็น PWA standalone ไม่มี
+  //   back-gesture นี้เลยทำงานได้อยู่แล้ว — ปัญหาเจอเฉพาะ iPad ในเบราว์เซอร์)
   useEffect(() => {
     if (profileOpen) return; // เปิดอยู่แล้วปล่อยให้ ProfileDrawer จัดการท่าปัดเอง
     let start = null;
     const onStart = (e) => {
       const t = e.touches[0];
-      start = t && t.clientX <= 24 ? { x: t.clientX, y: t.clientY } : null;
+      start = t && t.clientX <= 44 ? { x: t.clientX, y: t.clientY } : null;
     };
     const onMove = (e) => {
       if (!start) return;
       const t = e.touches[0];
       const dx = t.clientX - start.x;
       const dy = Math.abs(t.clientY - start.y);
-      if (dx > 60 && dx > dy) {
+      if (dx > 48 && dx > dy) {
         setProfileOpen(true); // ลากขวาพอสมควร + เป็นแนวนอนชัดเจน
         start = null;
       } else if (dy > 40) {
