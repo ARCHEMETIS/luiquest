@@ -78,20 +78,54 @@ migration ใหม่ `2026-08-04-quest-generation-atomic.sql` + แก้ `que
 - **decision เจ้าของ (4 ส.ค.):** "เอาปัจจุบัน" = คงพฤติกรรมเดิม — ฟรีเก็บ 3 หัวข้อ / premium ไม่จำกัด; ข้อความขายใน drawer ที่พูดถึง "หลายหัวข้อไม่จำกัด" **ไม่ขัด**กับจุดขายใหม่ เพราะยังเป็นสิทธิ์ premium จริง แค่ไม่ใช่พระเอก (ฟรีซ streak เป็นพระเอก) → ไม่ต้องแก้ข้อความ
 - 🔄 **กำลังรัน:** Codex ยุบ 5 migrations เข้า `supabase/schema.sql` (lane 6)
 
+## ✅ Deploy prep เสร็จครบ 3 ขั้น (4 ส.ค. 2026)
+
+**① migration รันบน production ครบ 5 ไฟล์แล้ว** (ledger → quest-bank-days → generation-atomic → verify-payment → rls-close) ตรวจผลผ่าน 10/10:
+
+```
+xp_awards table ................ true
+quest_generation_claims ........ true
+starter_quests.day_number ...... true
+complete_quest versions ........ 1      (ลายเซ็นเก่า 8 อาร์กิวเมนต์ถูกทิ้งแล้ว)
+new RPCs ....................... 3      (verify_payment / create_quest_with_checklist / get_eligible_roadmaps)
+policies ที่ต้องถูกลบ ........... 0      (ปิดช่องปลอมยอดรายรับ + client เขียนตรงแล้ว)
+xp_awards policies ............. 1      (select ของตัวเองอย่างเดียว)
+service_role เรียก complete_quest  true
+client (authenticated) ......... false  ✓ ถูกบล็อกตามที่ต้องการ
+starter_quests unique key ...... UNIQUE (topic_id, level, day_number)
+```
+
+**② seed เควสสำเร็จ** — `อัปเสิร์ต starter_quests สำเร็จ 108 แถว` ตรวจแล้วทุกหัวข้อ × ทุกระดับมีครบ **วันที่ 1–7** (18 เดิม + 108 ใหม่ = 126 แถว)
+
+**③ `PROMPTPAY_ID` เพิ่มบน Netlify แล้ว** (All scopes, ทุก deploy context) — `create-payment` จะไม่ตอบ 503 อีก
+
+### 🎉 ข่าวดีที่เจอตอน pre-check: `referrals` = 1 แถวแล้ว
+ค้างมาตั้งแต่ 21 ก.ค. ว่า "flow พังหรือแค่ไม่มีคนกด" — **คำตอบคือไม่พัง** ลิงก์ชวนเพื่อน redeem สำเร็จจริงบน production (เจ้าของ + agent อีกตัวเทสได้ผล) ตัด unknown ก้อนใหญ่ของ metric ที่วิชาวัดออกไป
+
+### สถานะ DB ตอนนี้ (ก่อนล้าง)
+`profiles: 2 · roadmaps: 2 · quest_completions: 0 · referrals: 1 · payments: 0 · xp_awards: 0`
+
 ## ⏭️ ทำต่อจากตรงนี้ (เรียงลำดับ)
 
 ~~1. รีวิว + merge worktree เลน 4~~ ✅ เสร็จ
 ~~2. `quest-today` กันโชว์เควสวันถัดไปก่อนตี 5~~ ✅ เสร็จ (เลน 5 ทำ `learningDayStr`)
 
-3. **รีวิว `supabase/schema.sql` ที่ Codex ยุบมา** (lane 6 กำลังรัน) — เช็ค: ไม่มี object ซ้ำ / ทุก `security definer` มี `revoke execute` ลายเซ็นถูก / ไม่มีร่องรอย `complete_quest` ลายเซ็นเก่า 8 อาร์กิวเมนต์ / **ไม่มี backfill `insert...select` หลุดเข้ามา**
-4. **frontend รับ `dailyLimitReached`** จาก complete-quest มาแสดงข้อความให้ตรงเหตุ (ตอนนี้ backend ส่งมาแล้วแต่ยังไม่มีใครใช้)
-5. **`Coach.jsx` นับโควตาฝั่ง client จาก `chat_messages`** (~บรรทัด 60) — server ย้ายไปนับ `activity_log` แล้ว สองฝั่งจะไม่ตรงกันหลังมีคนลบหัวข้อ ควรใช้ `remaining` ที่ server คืนมาแทน
-6. รันเทสรวม + `npm run build` + **commit ลง branch ใหม่** (ห้าม push main)
-7. **รัน migration บน production DB** (SQL Editor) — ⚠️ ต้องทำ **ก่อน** deploy โค้ด ไม่งั้นโค้ดใหม่เรียก RPC ที่ยังไม่มี → พังทันที
-   ลำดับ: `xp-awards-ledger` → `quest-bank-days` → `quest-generation-atomic` → `verify-payment` → `rls-close-client-writes`
-8. `node --env-file=.env scripts/seed-quest-bank.mjs` — ยัดเควส 108 ชุดเข้า production (ต้องรันหลังข้อ 7 เพราะต้องมีคอลัมน์ `day_number` ก่อน)
-9. **เพิ่ม `PROMPTPAY_ID` ใน Netlify env vars** (ตอนนี้มีแค่ใน `.env` ของเครื่อง) ไม่งั้น create-payment ตอบ 503
-10. **deploy รอบเดียว** → verify → ล้าง DB → ประกาศ
+~~3. รีวิว schema.sql ที่ Codex ยุบมา~~ ✅ ผ่าน (ตรวจ 6 จุด ไม่มี object ซ้ำ, revoke ครบ, ไม่มี backfill หลุด, migration files ไม่ถูกแตะ)
+~~4. frontend รับ `dailyLimitReached`~~ ✅ เสร็จ
+~~5. `Coach.jsx` นับโควตาจาก activity_log~~ ✅ เสร็จ
+~~6. commit ลง branch ใหม่~~ ✅ `17be6ef` + `c21e47b`
+~~7. รัน migration บน production~~ ✅ ครบ 5 ไฟล์ ตรวจผ่าน 10/10
+~~8. seed เควส 108 ชุด~~ ✅ 126 แถวรวม
+~~9. PROMPTPAY_ID บน Netlify~~ ✅
+
+**เหลือแค่นี้:**
+
+10. **merge `wave2-security-payments-content` → `main` แล้ว push** → Netlify CD deploy อัตโนมัติ (ทุก prerequisite พร้อมหมดแล้ว ปลอดภัยที่จะ push)
+11. **verify บน production** — เปิด `/premium` (QR ขึ้นไหม), ทำเควสจริงดูว่าได้ XP + ledger บันทึก, ลองทำซ้ำหัวข้อเดิมวันเดียวกันต้องได้ 0 XP, เช็คมาสคอตเดินบน `/quest`
+12. **ล้าง DB เริ่มนับศูนย์** (ทำท้ายสุด หลัง verify เสร็จ) — ตอนนี้มี 2 บัญชี/2 roadmap/1 referral ที่เป็นข้อมูลเทส
+13. **ประกาศ** 🚀
+
+**หลังประกาศ:** เฝ้าโควตา Gemini, ดูสลิปที่รอตรวจในหน้า admin, เก็บ screenshot ตัวเลขไว้ทำสไลด์ (นำเสนอ 21 ส.ค.)
 
 ## 🧪 ผลเทสล่าสุด (ทั้งหมดผ่าน)
 ```
