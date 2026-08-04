@@ -51,11 +51,13 @@ query production DB ตรง (service role) เจอว่า **22 ก.ค. 12
 
 **push แล้วแต่ยังไม่ได้ deploy:** `58ce03b` (ระบบเลเวล XP→เลเวล→แรงค์ F–SSS + หน้า restday + มาสคอตลูป) และ `4fb0ad1` (ลบบทเรียน + ปุ่มพรีเมียม + particles/pop-in/wobble)
 
-### ✅ ต้องทำทันทีหลัง deploy กลับมาได้ (2 ส.ค.)
+### ✅ deploy กลับมาแล้ว 24 ก.ค. 2026 (เครดิตรีเซ็ต)
 
-1. **รัน `supabase/migrations/2026-07-23-grade-from-xp.sql` ซ้ำ** — migration นี้เคยรันไปแล้ว 23 ก.ค. แต่**ถูกย้อนกลับเป็นเกณฑ์ streak เมื่อ 24 ก.ค.** เพราะโค้ดบน production ยังเป็นตัวเก่าที่ส่ง GRADE_BANDS แบบ streak มาให้ ทำให้เกรดพุ่งเป็น A ที่ 14 XP (SQL ที่ใช้ย้อนอยู่ใน scratchpad ของ session นั้น ตัวจริงดึงจาก `git show 58ce03b~1:supabase/schema.sql`)
-   **ถ้าไม่รันซ้ำ:** UI จะโชว์หลอด XP/เลเวล แต่เกรดยังตัดจากวันติด = ไม่ตรงกัน
-2. ยืนยัน bundle ใหม่ขึ้นจริง (ดูว่า `เลเวลถัดไป` อยู่ใน bundle) แล้วค่อยไล่เช็คลิสต์ด้านล่างต่อ
+- push empty commit `911131d` เตะ Netlify CD → deploy ผ่าน, bundle ใหม่ `index-DVXlpEUb.js`
+- ยืนยัน: `เลเวลถัดไป` อยู่ใน bundle ✅ / `delete-roadmap` ตอบ 401 (deploy แล้ว) ✅
+- **`pre-generate-quests` ยิงจากภายนอกได้ 403 แล้ว** (Netlify บล็อก scheduled function จาก public HTTP เอง — แน่นกว่า window guard ที่เขียนไว้; cron ภายในไม่กระทบ ยืนยันได้จาก daily_quests คืนถัดไป)
+- ✅ **รัน `2026-07-23-grade-from-xp.sql` ซ้ำแล้ว (24 ก.ค.)** — เจ้าของรันใน SQL editor, ยืนยันด้วยการยิง `complete_quest` จริง 3 จุด: XP 95→C, 175→B, 15→F (ถ้ายังเป็น streak=1 จะได้ F หมด). DB กับ UI ตรงกันแล้ว
+  หมายเหตุ: migration ตัวนี้ band-agnostic — เปลี่ยนแค่การเทียบ (streak→total_xp) ส่วนตัวเลขเกณฑ์มาจาก `src/lib/gradeBands.js` ตอน runtime (ปัจจุบันระบบเลเวล: F≥0 D≥25 C≥90 B≥175 A≥340 S≥550 SS≥900 SSS≥1330)
 
 **เช็คลิสต์ที่ยังค้างจริง:**
 
