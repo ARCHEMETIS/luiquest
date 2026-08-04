@@ -118,10 +118,34 @@ starter_quests unique key ...... UNIQUE (topic_id, level, day_number)
 ~~8. seed เควส 108 ชุด~~ ✅ 126 แถวรวม
 ~~9. PROMPTPAY_ID บน Netlify~~ ✅
 
-**เหลือแค่นี้:**
+~~10. merge → main แล้ว push~~ ✅ **deploy ขึ้น production แล้ว** (`716a1bd`, bundle `index-BpqjrM3n.js`)
 
-10. **merge `wave2-security-payments-content` → `main` แล้ว push** → Netlify CD deploy อัตโนมัติ (ทุก prerequisite พร้อมหมดแล้ว ปลอดภัยที่จะ push)
-11. **verify บน production** — เปิด `/premium` (QR ขึ้นไหม), ทำเควสจริงดูว่าได้ XP + ledger บันทึก, ลองทำซ้ำหัวข้อเดิมวันเดียวกันต้องได้ 0 XP, เช็คมาสคอตเดินบน `/quest`
+### 🚨 บทเรียน 2 ข้อจาก deploy รอบนี้ (อย่าพลาดซ้ำ)
+
+**① รัน migration ก่อน deploy ทำให้เกิด "ช่องว่าง" ที่โค้ดเก่าพัง**
+migration ทิ้งลายเซ็นเก่า `complete_quest(8 args)` → โค้ดที่ deploy อยู่เรียกไม่เจอ → **ทำเควสไม่ได้ทั้งระบบ** ตั้งแต่รัน migration จนถึง deploy เสร็จ
+พิสูจน์ด้วย: `PGRST202 Could not find the function public.complete_quest(...)`
+**ครั้งหน้า:** ถ้าเปลี่ยนลายเซ็น RPC ให้ **ใส่ default ให้พารามิเตอร์ใหม่** เพื่อให้โค้ดเก่าเรียกได้ระหว่างรอ deploy แล้วค่อยลบ default ทีหลัง (โชคดีรอบนี้ DB มีแค่บัญชีทดสอบ ไม่มีผู้ใช้จริงกระทบ)
+
+**② Netlify มองทุกไฟล์ระดับบนสุดใน `netlify/functions/` เป็น function**
+`complete-quest.test.mjs` เลยกลายเป็น function ชื่อ `complete-quest.test` ที่มีจุด → **build ล้มทั้งก้อน**
+`Incorrect function names. Name should consist of only alphanumeric characters, hyphen & underscores`
+**กติกา:** ไฟล์เทสของ function ต้องอยู่ใน `netlify/functions/_shared/` เสมอ (โฟลเดอร์ขึ้นต้น `_` ถูกข้าม) — ห้ามวางไว้ระดับบนสุด
+
+### ✅ ยืนยันบน production หลัง deploy
+
+```
+me / quest-today ....................... 405  (GET-only)
+chat / complete-quest / switch-roadmap /
+delete-roadmap / redeem-referral /
+generate-quest ......................... 401
+create-payment / submit-slip /
+verify-payment / admin-payments ........ 401  ← 4 ตัวใหม่ขึ้นแล้ว
+pre-generate-quests .................... 403  (Netlify กัน public HTTP)
+/premium ............................... 200
+```
+
+11. **verify ด้วยการใช้งานจริง** (ยังไม่ได้ทำ) — เปิด `/premium` ดู QR ขึ้นครบ, ทำเควสจริงดูว่าได้ XP + `xp_awards` บันทึก, ลองทำซ้ำหัวข้อเดิมวันเดียวกันต้องได้ 0 XP + ข้อความ "วันนี้เก็บ XP ของหัวข้อนี้ครบแล้ว", เช็คมาสคอตเดินบน `/quest` และแตะแล้วไป `/coach`
 12. **ล้าง DB เริ่มนับศูนย์** (ทำท้ายสุด หลัง verify เสร็จ) — ตอนนี้มี 2 บัญชี/2 roadmap/1 referral ที่เป็นข้อมูลเทส
 13. **ประกาศ** 🚀
 
