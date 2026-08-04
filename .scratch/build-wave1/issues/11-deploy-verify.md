@@ -59,19 +59,18 @@ query production DB ตรง (service role) เจอว่า **22 ก.ค. 12
 - ✅ **รัน `2026-07-23-grade-from-xp.sql` ซ้ำแล้ว (24 ก.ค.)** — เจ้าของรันใน SQL editor, ยืนยันด้วยการยิง `complete_quest` จริง 3 จุด: XP 95→C, 175→B, 15→F (ถ้ายังเป็น streak=1 จะได้ F หมด). DB กับ UI ตรงกันแล้ว
   หมายเหตุ: migration ตัวนี้ band-agnostic — เปลี่ยนแค่การเทียบ (streak→total_xp) ส่วนตัวเลขเกณฑ์มาจาก `src/lib/gradeBands.js` ตอน runtime (ปัจจุบันระบบเลเวล: F≥0 D≥25 C≥90 B≥175 A≥340 S≥550 SS≥900 SSS≥1330)
 
-**เช็คลิสต์ที่ยังค้างจริง:**
+## ✅ ปิดงานรอบ 4 ส.ค. 2026 — เกือบครบ พร้อมประกาศ
 
-1. ✅ **`a0f0b29` อยู่บน production จริง** (เช็ค 23 ก.ค.) — bundle `/assets/index-Ds2Sh9KU.js` มีข้อความ state `restday` ที่เพิ่งเพิ่ม, functions ตอบ auth ถูก (401/405 ตามเมธอด), SPA fallback ของ `/stats` + `/invite/<code>` ทำงาน, `manifest.webmanifest` + `sw.js` เสิร์ฟ 200
-2. ⬜ **e2e ด้วยบัญชี Google จริงบน production** เฉพาะส่วนที่ทำ headless ไม่ได้ (OAuth):
-   - drawer → สลับหัวข้อ (`switch-roadmap`) + เพดานฟรี 3 หัวข้อเตือนถูก
-   - แชทโค้ช ตอบจริงบน production (ไม่ใช่แค่ `netlify dev`) + โควต้า 10 ข้อความ/วันนับถูก
-   - **redeem ลิงก์ชวนด้วยบัญชีที่สอง** — `/invite/<code>` → ล็อกอิน → XP เข้าทั้งคู่ + ยอดใน drawer ขึ้น (ยังไม่เคยทดสอบ flow นี้เต็ม รวม window 7 วัน `REDEEM_WINDOW_DAYS`)
-   - state `restday` หลังทำเควสครบวัน (แก้ไปตอน `a0f0b29` ทดสอบใน dev แล้ว)
-3. ⬜ **เช็คโควต้า Gemini จริงกับ AI Studio dashboard** (RPM/RPD ของ `gemini-2.5-flash` + `-lite` บน free tier) — ค้างมาตั้งแต่ ticket 05–08 (#11.A.4); เสี่ยงต่ำถ้าคนใช้ยังไม่เยอะ แต่ต้องรู้เพดานก่อนชวนเพื่อนเข้ามาพร้อมกัน
-4. ⬜ **PWA ติดตั้งจริงบนมือถือ + iPad** (add to home screen, เปิดแบบ standalone, icon/splash ถูก)
-5. ✅ **scheduled function รันคืนจริงแล้ว** (เช็ค 23 ก.ค. จาก DB ตรง ไม่ต้องรอ log): มี `daily_quests` ถูกสร้างตอน **23 ก.ค. 02:05**, 22 ก.ค. 02:11 และ 17 ก.ค. 02:11 — ตรงหน้าต่าง cron `*/10 19-21 * * *` UTC (= ตี 2–5 ไทย) หลายคืนติดกัน
-6. ⬜ **ล้างข้อมูล DB ทั้งหมด เริ่มนับศูนย์** (เจ้าของเคาะ 23 ก.ค.) — ทำ **ท้ายสุด หลัง e2e ข้อ 2 เสร็จ** ไม่งั้นการเทสจะสร้างขยะใหม่อีก. ตอนนี้มี 5 บัญชี (2 ทดสอบ + 3 ผู้ใช้จริง 22 ก.ค.), 8 roadmaps (รวมคำหยาบ 2 อัน), 11 daily_quests, 4 quest_completions, 14 chat_messages, 31 activity_log, referrals 0
-7. ⬜ **deploy ด่านกรองหัวข้อขึ้น production** — โค้ดเสร็จ+เทสผ่านแล้ว (ดูหัวข้อข้างบน) รอ commit + push
-8. ⬜ **`referrals` = 0 แถว** — ยังไม่เคยมีใคร redeem ลิงก์ชวนสำเร็จเลยสักครั้ง ทั้งที่เป็น metric ที่วิชาเอาไปวัด; ยังแยกไม่ออกว่า "ไม่มีคนกด" หรือ "flow พัง" → ข้อ 2 ต้องพิสูจน์ให้ได้
+- ✅ **deploy live ครบ** (`index-DlAwwCxl.js`) — ระบบเลเวล XP→เลเวล→แรงค์ F–SSS, ลบบทเรียน, ปุ่มพรีเมียม, particles/pop-in/wobble, หน้าจบเควสมีปุ่ม "ไปต่อ ดูความคืบหน้า", iPad swipe (touch-action + ขยายโซนขอบ), แก้ลิงก์บทเรียนหน้าแรก YouTube, เควสขึ้นทันทีหลัง onboarding
+- ✅ **เกรดจาก XP** ยืนยัน 3 จุด (95→C, 175→B, 15→F)
+- ✅ **ลิงก์ชวน flow เต็ม** — เทส production 9/9 (redeem, XP +20 ทั้งคู่, referrals row, activity, กัน double/self/code มั่ว) **+ มี redeem จริงเกิดขึ้นแล้ว** (Teerabhat→Mahathi 4 ส.ค. ผ่าน UI จริง) → ตอบชัด: flow ไม่พัง แค่ยังไม่มีคนใช้
+- ✅ **ล้าง DB เริ่มศูนย์จริง** (4 ส.ค.) — ลบ auth 6 บัญชี (รวม admin) → cascade user data ทุกตาราง = 0, เก็บ topics(6)+starter_quests(18), roadmap คำหยาบเก่าหายไปด้วย
+- ✅ **โควต้า Gemini** เช็คแล้ว (23 ก.ค.) — ใส่ 3.1-flash-lite (500 RPD) ในทั้ง 2 chain, ทั้งแอพ ~560 ครั้ง/วัน
+- ✅ scheduled function รันจริงหลายคืน (23/22/17 ก.ค.); ต้องยืนยันคืนแรกบน build ใหม่อีกครั้ง (5 ส.ค. เช้า)
 
-**follow-up เล็ก ไม่บล็อกการเปิดตัว:** icon หัวข้อ freeform ใช้ default (`me.js` ไม่ส่ง slug), การ์ด streak เซฟด้วยกดค้าง (ไม่ใช้ lib), ปิด Email/Password provider ใน Supabase, coach quota premium >50 = Wave 2
+**เหลือจริง ๆ ก่อนกดประกาศ (ไม่ใช่งานโค้ดแล้ว):**
+1. ⬜ เจ้าของ **ล็อกอิน Google ใหม่ + รัน bootstrap admin** (`update profiles set is_admin=true where id='<uuid>'`) เพราะ wipe ลบ admin เก่าไปด้วย
+2. ⬜ **ลอง iPad ซ้ำ** ว่า swipe ใช้ได้แล้ว (แก้แล้วแต่เทสด้วยเมาส์ไม่ได้) + ลบไอคอน PWA เก่าติดตั้งใหม่ดูมาสคอต
+3. ⬜ เช็ค cron คืนแรกบน build ใหม่ (5 ส.ค. เช้า — Claude เช็คให้ได้จาก DB)
+
+**follow-up เล็ก ไม่บล็อก:** icon หัวข้อ freeform ใช้ default, การ์ด streak เซฟด้วยกดค้าง, ปิด Email/Password provider ใน Supabase, coach quota premium = Wave 2
