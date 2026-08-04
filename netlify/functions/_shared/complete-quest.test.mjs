@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { EMPTY_CHECKLIST_ERROR, validateChecklist } from './complete-quest.js';
+import { EMPTY_CHECKLIST_ERROR, validateChecklist } from '../complete-quest.js';
 
 test('rejects an empty checklist instead of treating it as complete', () => {
   const result = validateChecklist([], new Set());

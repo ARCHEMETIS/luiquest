@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { orderEligibleRoadmaps } from './pre-generate-quests.js';
+import { orderEligibleRoadmaps } from '../pre-generate-quests.js';
 
 test('orders eligible roadmaps by least-recently-generated first', () => {
   const rows = [
