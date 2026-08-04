@@ -20,3 +20,9 @@ npm-debug.log*
 Thumbs.db
 .vscode/
 .idea/
+
+# Claude Code — worktree ของ subagent คือสำเนา repo ทั้งก้อน ห้ามหลุดเข้า commit
+.claude/
+
+# ไฟล์ทดสอบ QR พร้อมเพย์ — payload ฝังเบอร์/เลขบัตรของเจ้าของไว้ข้างใน ห้ามขึ้น git
+.scratch/wave2/qr-test/

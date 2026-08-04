@@ -8,6 +8,7 @@ import { useEffect, useState } from "react";
 import { NavLink, Outlet, useLocation } from "react-router-dom";
 import GhostMascot from "./GhostMascot.jsx";
 import { LuiQuestFavicon } from "./LuiQuestLogo.jsx";
+import NavMascot from "./NavMascot.jsx";
 import ProfileDrawer from "./ProfileDrawer.jsx";
 import { useProfile } from "../hooks/useProfile.jsx";
 
@@ -64,6 +65,7 @@ export default function AppShellLayout() {
   const { profile } = useProfile();
   const location = useLocation();
   const activeIndex = Math.max(0, NAV_ITEMS.findIndex((i) => location.pathname === i.to || location.pathname.startsWith(i.to + "/")));
+  const isQuestTab = location.pathname === "/quest" || location.pathname.startsWith("/quest/");
 
   const name = profile?.display_name || "นักผจญภัย";
   const initial = (name.charAt(0) || "?").toUpperCase();
@@ -163,10 +165,13 @@ export default function AppShellLayout() {
       </main>
 
       {/* bottom nav — แถบ active ไหลตามหน้า + ประกายเล็ก ๆ ตอนสลับ */}
+      {/* relative เพิ่มมาเพื่อให้มาสคอตที่เดินอยู่ (NavMascot) เกาะ "หลังคา" ของแถบนี้ได้พอดีโดยไม่ต้องเดาความสูง */}
       <nav
-        className="z-10 shrink-0 border-t border-[#FBCFE8] bg-gradient-to-t from-white to-[#FDF2F8] px-2"
+        className="relative z-10 shrink-0 border-t border-[#FBCFE8] bg-gradient-to-t from-white to-[#FDF2F8] px-2"
         style={{ boxShadow: "0 -6px 16px rgba(139,92,246,.10)", paddingBottom: "max(4px, env(safe-area-inset-bottom))" }}
       >
+        {/* มาสคอตเดินเล่นบนขอบ nav — เฉพาะหน้าเควส (หน้าอันดับมีการ์ดปักท้ายจอ / หน้าโค้ชมีช่องพิมพ์ ตรงนั้นจะทับกัน) */}
+        {isQuestTab && <NavMascot />}
         <div className="relative grid pt-1" style={{ gridTemplateColumns: `repeat(${NAV_ITEMS.length}, minmax(0,1fr))` }}>
           <span
             aria-hidden="true"

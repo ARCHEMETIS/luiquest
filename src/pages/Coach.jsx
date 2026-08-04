@@ -43,7 +43,8 @@ export default function Coach() {
   useEffect(() => {
     if (!token || !roadmapId || !user) return;
     (async () => {
-      const [questRes, historyRes] = await Promise.all([
+      const todayStart = startOfBangkokDayISO();
+      const [questRes, historyRes, quotaRes] = await Promise.all([
         api.questToday(token, roadmapId).catch(() => null),
         // เอา "ล่าสุด 50 แถว" — ต้อง order desc แล้วค่อย reverse (ถ้า order asc + limit จะได้เก่าสุด 50 แถวแทน
         // ทำให้ตัวนับโควต้าวันนี้อ่านจากข้อความโบราณแล้วเพี้ยนเป็น 0 ทั้งที่แชทไปแล้ว) — แพทเทิร์นเดียวกับ chat.js ฝั่ง server
@@ -53,14 +54,23 @@ export default function Coach() {
           .eq('user_id', user.id)
           .order('created_at', { ascending: false })
           .limit(50),
+        // ★ นับโควต้าจาก activity_log ไม่ใช่ chat_messages — ต้องใช้ "แหล่งเดียวกับที่ server บังคับ"
+        // (chat.js นับ event_type='chat' ตั้งแต่ 4 ส.ค. 2026) เพราะ chat_messages.roadmap_id เป็น
+        // on delete cascade → ลบหัวข้อแล้วข้อความหาย ฝั่งจอจะโชว์ว่ายังเหลือโควต้าทั้งที่ server ปฏิเสธไปแล้ว
+        // activity_log ไม่มี FK ไป roadmaps จึงไม่หายตาม และ RLS เปิดให้อ่านแถวของตัวเองอยู่แล้ว
+        supabase
+          .from('activity_log')
+          .select('id', { count: 'exact', head: true })
+          .eq('user_id', user.id)
+          .eq('event_type', 'chat')
+          .gte('created_at', todayStart),
       ]);
 
       if (questRes?.status === 'ready') setQuestId(questRes.quest.id);
 
       const rows = (historyRes?.data ?? []).slice().reverse();
-      const todayStart = startOfBangkokDayISO();
-      const usedToday = rows.filter((r) => r.role === 'user' && r.created_at >= todayStart).length;
-      setInitialQuotaUsed(usedToday);
+      // อ่านค่าไม่ได้ (network/RLS) → ถือว่ายังไม่ได้ใช้โควต้า ปล่อยให้ server เป็นคนตัดสินตอนส่งจริง
+      setInitialQuotaUsed(quotaRes?.count ?? 0);
       setInitialMessages(
         rows.map((r) => ({
           role: r.role === 'assistant' ? 'coach' : 'user',

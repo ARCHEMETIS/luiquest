@@ -10,6 +10,7 @@ import { useNavigate } from "react-router-dom";
 import { useAuth } from "../hooks/useAuth.jsx";
 import { useProfile } from "../hooks/useProfile.jsx";
 import { api } from "../lib/api.js";
+import { gradeFromXp } from "../lib/gradeBands.js";
 import { supabase } from "../lib/supabaseClient.js";
 
 // level enum จริงจาก backend = beginner/intermediate/advanced (ต่างจาก id การ์ด onboarding some/solid)
@@ -209,7 +210,9 @@ export default function ProfileDrawer({ open, onClose, showStateToggle = false }
   const preset = {
     plan: profile?.is_premium ? "premium" : "free",
     user: { name, initial },
-    stats: { xp: profile?.total_xp ?? 0, streak: profile?.current_streak ?? 0, rank: profile?.grade ?? "–" },
+    // แรงค์คิดสดจาก total_xp ด้วย helper กลาง (gradeBands) เหมือนหน้าเควส — ห้ามใช้ profile.grade ที่เก็บใน DB
+    // เพราะ XP จากลิงก์ชวนเพื่อนบวก total_xp โดยไม่อัพเดต grade แถบนี้เลยเคยโชว์แรงค์ค้างสวนทางกับหน้าเควส
+    stats: { xp: profile?.total_xp ?? 0, streak: profile?.current_streak ?? 0, rank: profile ? gradeFromXp(profile.total_xp).grade : "–" },
     topics: (roadmaps ?? [])
       .filter((r) => r.status !== "failed")
       .map((r) => ({ id: r.id, title: r.topic_title, level: r.level, active: r.is_active })),
@@ -460,7 +463,7 @@ export default function ProfileDrawer({ open, onClose, showStateToggle = false }
                 </div>
                 <div className="rounded-2xl border border-[#FBCFE8] bg-white/70 px-2 py-1.5 text-center">
                   <p className="text-[9px] text-[#9D5C7C]">แรงค์</p>
-                  <p className={`font-heading text-[13px] font-bold ${RANK_COLOR[preset.stats.rank] || "text-[#9D5C7C]"}`}>
+                  <p className={`font-heading text-[13px] font-bold ${RANK_COLOR[preset.stats.rank?.charAt(0)] || "text-[#9D5C7C]"}`}>
                     {preset.stats.rank}
                   </p>
                 </div>
@@ -513,12 +516,15 @@ export default function ProfileDrawer({ open, onClose, showStateToggle = false }
                 </button>
 
                 {/* ปุ่มอัปเกรดพรีเมียม — ดีไซน์เดิมของเพื่อน (commit e61b309) ที่ถูกซ่อนตอน wiring เพราะยังไม่มี payment flow
-                    เอากลับมาโชว์ตามที่เจ้าของขอ แต่ยัง "ไม่ขายจริง": กดแล้วเปิดกล่องเดิมที่บอกว่าพรีเมียมกำลังจะมา
-                    (กล่องเดียวกับตอนครบเพดาน ไม่สร้างกล่องที่สอง) — คนที่เป็นพรีเมียมอยู่แล้วไม่ต้องเห็นปุ่มนี้ */}
+                    ตอนนี้มีหน้า /premium (QR พร้อมเพย์ + อัปสลิป) แล้ว จึงพาไปหน้านั้นจริง ๆ แทนกล่อง "กำลังจะมา"
+                    — คนที่เป็นพรีเมียมอยู่แล้วไม่ต้องเห็นปุ่มนี้ */}
                 {preset.plan !== "premium" && (
                   <button
                     type="button"
-                    onClick={() => setShowCapUpsell(true)}
+                    onClick={() => {
+                      requestClose();
+                      navigate("/premium");
+                    }}
                     className="mt-2.5 flex w-full items-center justify-center gap-1 rounded-full bg-gradient-to-r from-violet-500 to-pink-500 px-3 py-1.5 font-heading text-[10px] font-bold text-white shadow-[0_8px_18px_rgba(139,92,246,.28)] transition hover:-translate-y-0.5 active:translate-y-px"
                   >
                     <Icon paths={ICON_PATHS.sparkles} className="h-3 w-3" />
@@ -526,7 +532,7 @@ export default function ProfileDrawer({ open, onClose, showStateToggle = false }
                   </button>
                 )}
 
-                {/* เลิกผูกกับ atCap แล้ว — กล่องนี้ถูกเปิดได้ 2 ทาง: กด "เพิ่มหัวข้อใหม่" ตอนครบเพดาน หรือกดปุ่มพรีเมียม
+                {/* เลิกผูกกับ atCap แล้ว — เปิดจากปุ่ม "เพิ่มหัวข้อใหม่" ตอนครบเพดานเป็นหลัก (ปุ่มพรีเมียมพาไป /premium แทนแล้ว)
                     หัวข้อกล่องจึงต้องเปลี่ยนตามทางที่เข้ามา ไม่งั้นคนที่มีหัวข้อเดียวจะเจอข้อความ "เก็บครบ 3 หัวข้อแล้ว" ที่ไม่จริง */}
                 {showCapUpsell && (
                   <div
@@ -538,7 +544,7 @@ export default function ProfileDrawer({ open, onClose, showStateToggle = false }
                     </p>
                     <p className="mt-1 text-[#9D5C7C]">
                       แผนฟรีเก็บได้ {TOPIC_CAP_FREE} หัวข้อ (progress ทุกหัวข้อยังอยู่ครบ สลับกลับมาเรียนต่อได้เสมอ) —
-                      อยากลุยหลายหัวข้อพร้อมกันไม่จำกัด รอพรีเมียมเร็ว ๆ นี้
+                      อยากลุยหลายหัวข้อพร้อมกันไม่จำกัด กดปุ่ม "อัปเกรดพรีเมียม" ด้านบนได้เลย
                     </p>
                   </div>
                 )}

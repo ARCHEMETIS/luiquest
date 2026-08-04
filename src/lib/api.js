@@ -43,4 +43,10 @@ export const api = {
   deleteRoadmap: (roadmapId, token) => callFn('delete-roadmap', { body: { roadmap_id: roadmapId }, token }),
   redeemReferral: (code, token) => callFn('redeem-referral', { body: { referral_code: code }, token }),
   chat: (payload, token) => callFn('chat', { body: payload, token }),
+  // ---- พรีเมียม 39 บาท/เดือน ผ่านพร้อมเพย์ (spec §6.3) ----
+  // createPayment: สร้าง/คืนรายการจ่ายที่ค้างอยู่ → { ref_code, amount, status, promptpay_id }
+  //   อาจตอบ 503 ถ้าเจ้าของยังไม่ได้ตั้งเลขพร้อมเพย์ → หน้า /premium จับ err.status เองแล้วบอกผู้ใช้ดี ๆ
+  // submitSlip: บอกว่าอัปสลิปขึ้น bucket payment-slips แล้ว (pending → submitted)
+  createPayment: (token) => callFn('create-payment', { body: {}, token }),
+  submitSlip: (payload, token) => callFn('submit-slip', { body: payload, token }),
 };

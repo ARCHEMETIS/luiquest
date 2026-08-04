@@ -6,7 +6,7 @@
 import { requireUser, unauthorized, json } from './_shared/auth.js';
 import { getAdminClient } from './_shared/supabaseAdmin.js';
 import { generateNextQuest } from './_shared/questGenerator.js';
-import { bangkokDateStr } from './_shared/datetime.js';
+import { learningDayStr } from './_shared/datetime.js';
 
 export default async (req) => {
   if (req.method !== 'GET') return json(405, { error: 'Method Not Allowed' });
@@ -41,23 +41,28 @@ export default async (req) => {
 
   const { data: quests, error: questsErr } = await admin
     .from('daily_quests')
-    .select('id, phase_id, day_number, title, description, content, xp_reward')
+    .select('id, phase_id, day_number, scheduled_date, title, description, content, xp_reward')
     .eq('roadmap_id', roadmap.id)
     .order('day_number', { ascending: true });
   if (questsErr) return json(500, { error: questsErr.message });
 
-  let quest = (quests ?? []).find((q) => !doneIds.has(q.id));
+  const currentLearningDay = learningDayStr();
+  let quest = (quests ?? []).find(
+    (q) => !doneIds.has(q.id) && (!q.scheduled_date || q.scheduled_date <= currentLearningDay)
+  );
   let generatedNow = null;
 
   if (!quest) {
     // เควสทุกวันทำจบหมดแล้ว — ตัดสินใจว่า "จบของวันนี้แล้ว" หรือ "ค้างไร้เควส ต้อง generate เดี๋ยวนี้"
     const questList = quests ?? [];
     const latestQuest = questList[questList.length - 1] ?? null;
-    const latestDone = latestQuest
-      ? (completedRows ?? []).find((r) => r.quest_id === latestQuest.id)
-      : null;
+    const latestDone = [...questList]
+      .reverse()
+      .filter((q) => !q.scheduled_date || q.scheduled_date <= currentLearningDay)
+      .map((q) => (completedRows ?? []).find((r) => r.quest_id === q.id))
+      .find(Boolean);
     const doneToday =
-      latestDone?.completed_at && bangkokDateStr(new Date(latestDone.completed_at)) === bangkokDateStr();
+      latestDone?.completed_at && learningDayStr(new Date(latestDone.completed_at)) === currentLearningDay;
 
     // จบเควสวันนี้ไปแล้ว = เจตนา 1 เควส/วัน ไม่ generate ล่วงหน้าให้ binge — cron รายคืนเตรียมของพรุ่งนี้เอง
     // แยก status 'done_today' ออกจาก 'not_ready' ให้ frontend โชว์ "จบวันนี้แล้ว พักได้" (บวก) ไม่ใช่ "ปั่นไม่ทัน ลองใหม่" (error)
@@ -93,10 +98,38 @@ export default async (req) => {
       });
     }
 
+    // quest ที่ cron เตรียมไว้สำหรับวันเรียนถัดไปยังห้ามส่งให้ผู้ใช้ก่อน 05:00
+    if (latestQuest.scheduled_date && latestQuest.scheduled_date > currentLearningDay) {
+      return json(200, {
+        status: 'not_ready',
+        roadmap,
+        quest: null,
+        message: 'เควสของวันเรียนถัดไปกำลังเตรียมอยู่ กลับมาอีกครั้งหลัง 05:00 น.',
+      });
+    }
+
     // ผู้ใช้ควรมีเควสวันนี้แต่ยังไม่ถูกสร้าง (เช่นเพิ่งสลับหัวข้อกลับมา — roadmap ที่พักอยู่ไม่เข้า cron)
     // generate on-demand เลย: idempotent ด้วย unique(roadmap_id, day_number) ชนกับ cron ได้ปลอดภัย
-    const gen = await generateNextQuest(admin, { roadmap, dayNumber: latestQuest.day_number + 1 });
+    const gen = await generateNextQuest(admin, {
+      roadmap,
+      dayNumber: latestQuest.day_number + 1,
+      scheduledDate: currentLearningDay,
+    });
     if (gen.failed) {
+      const { data: generationClaim } = await admin
+        .from('quest_generation_claims')
+        .select('status')
+        .eq('roadmap_id', roadmap.id)
+        .eq('day_number', latestQuest.day_number + 1)
+        .maybeSingle();
+      if (generationClaim?.status === 'generating') {
+        return json(200, {
+          status: 'generation_in_progress',
+          roadmap,
+          quest: null,
+          message: 'กำลังสร้างเควสอยู่ ลองรีเฟรชอีกครั้งในอีกสักครู่',
+        });
+      }
       return json(200, {
         status: 'not_ready',
         roadmap,

@@ -8,6 +8,7 @@ import {
   QUEST_CONTINUATION_JSON_SCHEMA,
 } from './gemini.js';
 import { TOPIC_REJECT_CODE, TOPIC_REJECT_MESSAGE } from './topicModeration.js';
+import { learningDayStr } from './datetime.js';
 
 export const FREE_PLAN_LIMIT_MESSAGE =
   'แผนฟรีเรียนได้ทีละ 1 หัวข้อ — ปิด roadmap เดิมก่อน หรืออัปเกรด Premium เพื่อเรียนหลายหัวข้อพร้อมกัน';
@@ -35,39 +36,27 @@ async function seedDayOneFromStarter(admin, { roadmapId, topicId, level }) {
     starter?.description ??
     'เควสตัวอย่างเบื้องต้น ระหว่างระบบเตรียมคลังเควสของหัวข้อนี้ให้ครบ — เควสเต็มรูปแบบจะตามมาเร็ว ๆ นี้';
 
-  const { data: quest, error: questErr } = await admin
-    .from('daily_quests')
-    .insert({
-      roadmap_id: roadmapId,
-      phase_id: null,
-      day_number: 1,
-      title,
-      description,
-      content: starter?.content ?? {},
-      xp_reward: starter?.xp_reward ?? 10,
-      source_starter_id: starter?.id ?? null,
-    })
-    .select('id, roadmap_id, phase_id, day_number, title, description, content, xp_reward')
-    .single();
-  if (questErr) throw questErr;
-
   const checklistItems = Array.isArray(starter?.checklist) && starter.checklist.length
     ? starter.checklist
     : [{ label: 'อ่าน/ดูแหล่งเรียนเบื้องต้นของหัวข้อนี้', link_url: null }];
 
-  const rows = checklistItems.map((item, i) => ({
-    quest_id: quest.id,
+  const checklist = checklistItems.map((item, i) => ({
     order_index: item.order_index ?? i,
     label: item.label ?? `ขั้นตอนที่ ${i + 1}`,
     link_url: item.link_url ?? null,
   }));
-  const { data: checklist, error: checklistErr } = await admin
-    .from('quest_checklist_items')
-    .insert(rows)
-    .select('id, order_index, label, link_url');
-  if (checklistErr) throw checklistErr;
-
-  return { quest, checklist };
+  return createQuestWithChecklist(admin, {
+    roadmapId,
+    phaseId: null,
+    dayNumber: 1,
+    scheduledDate: learningDayStr(),
+    title,
+    description,
+    content: starter?.content ?? {},
+    xpReward: starter?.xp_reward ?? 10,
+    sourceStarterId: starter?.id ?? null,
+    checklist,
+  });
 }
 
 // พักทุก roadmap ที่ active อยู่ของ user (progress เก็บไว้ครบ) — เรียกก่อน insert/activate ตัวใหม่เสมอ
@@ -207,6 +196,110 @@ function sanitizeChecklistLinks(items, topicTitle) {
   });
 }
 
+const GENERATION_CLAIM_STALE_MS = 2 * 60 * 1000;
+const QUEST_SELECT = 'id, roadmap_id, phase_id, day_number, scheduled_date, title, description, content, xp_reward, source_starter_id';
+
+async function readQuestForDay(admin, roadmapId, dayNumber) {
+  const { data: quest, error: questErr } = await admin
+    .from('daily_quests')
+    .select(QUEST_SELECT)
+    .eq('roadmap_id', roadmapId)
+    .eq('day_number', dayNumber)
+    .maybeSingle();
+  if (questErr) throw questErr;
+  if (!quest) return null;
+
+  const { data: checklist, error: checklistErr } = await admin
+    .from('quest_checklist_items')
+    .select('id, order_index, label, link_url')
+    .eq('quest_id', quest.id)
+    .order('order_index', { ascending: true });
+  if (checklistErr) throw checklistErr;
+  return { quest, checklist: checklist ?? [] };
+}
+
+async function claimGeneration(admin, { roadmapId, dayNumber }) {
+  const existing = await readQuestForDay(admin, roadmapId, dayNumber);
+  if (existing) return { status: 'ready', ...existing };
+
+  const claimToken = globalThis.crypto.randomUUID();
+  const { data: inserted, error: insertErr } = await admin
+    .from('quest_generation_claims')
+    .insert({ roadmap_id: roadmapId, day_number: dayNumber, claim_token: claimToken })
+    .select('roadmap_id, day_number, claim_token, status, claimed_at')
+    .maybeSingle();
+  if (!insertErr && inserted) return { status: 'claimed', claimToken };
+  if (insertErr?.code !== '23505') throw insertErr;
+
+  const raced = await readQuestForDay(admin, roadmapId, dayNumber);
+  if (raced) return { status: 'ready', ...raced };
+
+  const staleBefore = new Date(Date.now() - GENERATION_CLAIM_STALE_MS).toISOString();
+  const { data: currentClaim, error: currentClaimErr } = await admin
+    .from('quest_generation_claims')
+    .select('status, claimed_at')
+    .eq('roadmap_id', roadmapId)
+    .eq('day_number', dayNumber)
+    .maybeSingle();
+  if (currentClaimErr) throw currentClaimErr;
+  if (currentClaim?.status === 'failed' && Date.parse(currentClaim.claimed_at) >= Date.now() - GENERATION_CLAIM_STALE_MS) {
+    return { status: 'failed' };
+  }
+  const { data: reclaimed, error: reclaimErr } = await admin
+    .from('quest_generation_claims')
+    .update({ claim_token: claimToken, claimed_at: new Date().toISOString(), status: 'generating', quest_id: null })
+    .eq('roadmap_id', roadmapId)
+    .eq('day_number', dayNumber)
+    .in('status', ['generating', 'failed'])
+    .lt('claimed_at', staleBefore)
+    .select('roadmap_id, day_number, claim_token, status, claimed_at')
+    .maybeSingle();
+  if (reclaimErr) throw reclaimErr;
+  if (reclaimed) return { status: 'claimed', claimToken };
+  return { status: 'generating' };
+}
+
+async function releaseGenerationClaim(admin, { roadmapId, dayNumber, claimToken }) {
+  if (!claimToken) return;
+  await admin
+    .from('quest_generation_claims')
+    .update({ status: 'failed', claimed_at: new Date().toISOString() })
+    .eq('roadmap_id', roadmapId)
+    .eq('day_number', dayNumber)
+    .eq('claim_token', claimToken);
+}
+
+async function createQuestWithChecklist(admin, {
+  roadmapId,
+  phaseId,
+  dayNumber,
+  scheduledDate,
+  title,
+  description,
+  content,
+  xpReward,
+  sourceStarterId,
+  checklist,
+  claimToken = null,
+}) {
+  const { data, error } = await admin.rpc('create_quest_with_checklist', {
+    p_roadmap_id: roadmapId,
+    p_phase_id: phaseId ?? null,
+    p_day_number: dayNumber,
+    p_scheduled_date: scheduledDate ?? null,
+    p_title: title,
+    p_description: description ?? null,
+    p_content: content ?? {},
+    p_xp_reward: xpReward,
+    p_source_starter_id: sourceStarterId ?? null,
+    p_checklist: checklist,
+    p_claim_token: claimToken,
+  });
+  if (error) throw error;
+  if (!data?.quest) throw new Error('create_quest_with_checklist returned no quest');
+  return { quest: data.quest, checklist: data.checklist ?? [] };
+}
+
 function normalizePhases(phases) {
   const arr = Array.isArray(phases) ? phases : [];
   return arr.slice(0, 6).map((p, i) => ({
@@ -250,23 +343,29 @@ function isValidGeneratedRoadmap(value) {
   );
 }
 
-export const FREEFORM_SYSTEM_PROMPT = `คุณคือระบบออกแบบ "เส้นทางเรียนรู้" (roadmap) ภาษาไทยสำหรับแอปเควสรายวัน ลุยเควส (LuiQuest)
-ผู้เรียนพิมพ์หัวข้อที่อยากเก่งเอง (ไม่ใช่ 6 หัวข้อ curated ของแอป) งานของคุณคือวางโครง roadmap คร่าว ๆ (~4 เฟส) + ออกแบบเควสแรกที่ทำได้ทันทีวันนี้
+export const FREEFORM_SYSTEM_PROMPT = `You design a Thai learning roadmap and first daily quest for LuiQuest.
 
-ก่อนอื่นตัดสินก่อนว่าหัวข้อนี้ใช้ได้ไหม แล้วตอบใน topic_ok:
+You have no browser. You cannot verify that any course, video, instructor, lesson, or URL exists. Never invent course names, video titles, instructor names, claims that a specific lesson was found, or deep URLs.
+
+ตัดสิน topic_ok ตามกติกาไทยนี้ (ห้ามย่อ — เกณฑ์ชุดนี้ทดสอบกับ Gemini จริงมาแล้วว่าไม่ over-block):
 - topic_ok = true เมื่อหัวข้อเป็น "สิ่งที่คนตั้งใจฝึกให้เก่งขึ้นได้จริง" — ทักษะ วิชา ภาษา กีฬา ดนตรี งานฝีมือ อาชีพ งานอดิเรก การดูแลตัวเอง ฯลฯ (ครอบคลุมหัวข้อกว้าง ๆ อย่าง "ทำอาหาร" หรือเฉพาะทางอย่าง "อ่านงบการเงิน" ก็ใช้ได้ทั้งคู่)
 - topic_ok = false เมื่อหัวข้อเป็นเรื่องเพศ/ลามก, คำหยาบหรือคำด่า, ความรุนแรงหรือทำร้ายคน, สิ่งผิดกฎหมาย/ทำอันตราย (เช่น ทำระเบิด ทำยาเสพติด โกงข้อสอบ แฮกบัญชีคนอื่น), การเหยียด/สร้างความเกลียดชัง, หรือเป็นข้อความมั่ว ๆ พิมพ์เล่นที่ไม่ใช่หัวข้อเรียน
 - ตอนตัดสินให้ดูเจตนาจริงของหัวข้อ ไม่ใช่แค่คำ — "โทษของยาเสพติด" หรือ "ความปลอดภัยไซเบอร์" คือหัวข้อเรียนที่ใช้ได้ (true)
 - ถ้า topic_ok = false ให้กรอก phases/first_quest แบบสั้นที่สุดพอผ่าน schema (ระบบจะทิ้งทั้งก้อน ไม่ต้องตั้งใจเขียน) และห้ามใส่เนื้อหาหยาบคายลงไป
+Write concise, friendly Thai. For every phase, its description must explicitly state both its prerequisite and its outcome.
+Respect the learner's daily time budget exactly:
+- 15 minutes: 2-3 short tasks.
+- 30 minutes: exactly 3 short tasks.
+- 60 minutes: at most 4 short tasks.
 
-ถ้า topic_ok = true ให้ทำตามกติกาต่อไปนี้:
-- เขียนทุกอย่างเป็นภาษาไทย กระชับ เป็นกันเอง ไม่ใช้สำนวน RPG จ๋า (ห้าม "ท่านนักผจญภัย")
-- phases: ~4 เฟส แต่ละเฟสมี title (สั้น) + description (1 ประโยค) ครอบคลุมตั้งแต่พื้นฐานถึงลงมือทำจริง
-- first_quest: เควสแรกที่ทำได้ทันทีวันนี้ เหมาะกับระดับพื้นฐานและเวลาที่มี
-  - xp_reward: 10-30
-  - checklist: 2-4 ข้อ สั้น กระชับ เป็นขั้นตอนที่ลงมือทำได้จริงวันนี้
-  - link_url (ถ้าจะใส่): ใส่ได้เฉพาะ "หน้าหลัก" ของเว็บไซต์เรียนที่มีจริงและมีชื่อเสียง (เช่น https://www.youtube.com/ หรือ https://www.coursera.org/) ห้ามแต่ง URL ลึก/เจาะจงหน้าใดหน้าหนึ่งเด็ดขาด — ถ้าไม่แน่ใจว่ามี URL จริงให้เว้นว่างไว้ (null) ระบบจะเติมลิงก์ค้นหาให้เอง`;
+The first quest must be practical today and contain 2-4 checklist items. A checklist label must say "ค้นหา..." when it points the learner to search for something; it must not assert that a specific course or lesson was found.
 
+For every checklist item, link_url must be null or exactly one of these permitted search URL patterns:
+- https://www.youtube.com/results?search_query=<query>
+- https://www.google.com/search?q=<query>
+Use no homepage URL, deep URL, or any other URL. Do not name a specific resource unless it was supplied by the user.
+
+Return JSON matching the schema exactly.`;
 export function buildFreeformRoadmapPrompt({ topicTitle, level, minutesPerDay }) {
   return `ผู้เรียนอยากเก่ง: "${topicTitle}"
 ระดับพื้นฐาน: ${LEVEL_LABEL_TH[level] ?? level}
@@ -419,32 +518,18 @@ export async function createFreeformRoadmap(admin, { userId, topicTitle, level, 
     .single();
   if (phaseErr) throw phaseErr;
 
-  const { data: quest, error: questErr } = await admin
-    .from('daily_quests')
-    .insert({
-      roadmap_id: roadmap.id,
-      phase_id: phase.id,
-      day_number: 1,
-      title: String(generated.first_quest.title ?? topicTitle).slice(0, 200),
-      description: String(generated.first_quest.description ?? '').slice(0, 500),
-      content: {},
-      xp_reward: clampXp(generated.first_quest.xp_reward),
-    })
-    .select('id, roadmap_id, phase_id, day_number, title, description, content, xp_reward')
-    .single();
-  if (questErr) throw questErr;
-
-  const checklistRows = checklist.map((item, i) => ({
-    quest_id: quest.id,
-    order_index: i,
-    label: item.label,
-    link_url: item.link_url,
-  }));
-  const { data: checklistData, error: checklistErr } = await admin
-    .from('quest_checklist_items')
-    .insert(checklistRows)
-    .select('id, order_index, label, link_url');
-  if (checklistErr) throw checklistErr;
+  const created = await createQuestWithChecklist(admin, {
+    roadmapId: roadmap.id,
+    phaseId: phase.id,
+    dayNumber: 1,
+    scheduledDate: learningDayStr(),
+    title: String(generated.first_quest.title ?? topicTitle).slice(0, 200),
+    description: String(generated.first_quest.description ?? '').slice(0, 500),
+    content: {},
+    xpReward: clampXp(generated.first_quest.xp_reward),
+    sourceStarterId: null,
+    checklist: checklist.map((item, i) => ({ ...item, order_index: i })),
+  });
 
   await admin.from('activity_log').insert({
     user_id: userId,
@@ -452,7 +537,7 @@ export async function createFreeformRoadmap(admin, { userId, topicTitle, level, 
     metadata: { freeform: true, topic_title: topicTitle },
   });
 
-  return { roadmap, quest, checklist: checklistData ?? [], phase, failed: false };
+  return { roadmap, ...created, phase, failed: false };
 }
 
 // ~1 สัปดาห์ต่อเฟส — heuristic ง่าย ๆ ตัดสินใจ deterministic จาก day_number ล้วน (ไม่ให้ Gemini ตัดสินเรื่อง phase boundary)
@@ -462,15 +547,25 @@ function phaseNumberForDay(dayNumber) {
   return Math.floor((dayNumber - 1) / PHASE_LENGTH_DAYS) + 1;
 }
 
-const CONTINUATION_SYSTEM_PROMPT = `คุณคือระบบต่อยอด "เควสรายวัน" ของแอปเรียนภาษาไทยแบบเควสรายวัน ลุยเควส (LuiQuest)
-ผู้เรียนกำลังเดินตาม roadmap เดิมอยู่ งานของคุณคือออกแบบ "เควสของวันถัดไป" ให้ต่อเนื่องจากเควสก่อนหน้า ไม่ซ้ำเดิม และเหมาะกับตำแหน่งบน roadmap
+const CONTINUATION_SYSTEM_PROMPT = `You extend an existing LuiQuest Thai learning roadmap by creating exactly one next-day micro-skill quest.
 
-กติกาสำคัญ:
-- เขียนภาษาไทย กระชับ เป็นกันเอง ไม่ใช้สำนวน RPG จ๋า
-- xp_reward: 10-30, checklist 2-4 ข้อ สั้น ลงมือทำได้จริงวันนี้
-- link_url (ถ้าจะใส่): ใส่ได้เฉพาะ "หน้าหลัก" ของเว็บไซต์ในรายการแหล่งเรียนที่ให้มาเท่านั้น หรือเว้นว่างไว้ (null) — ห้ามแต่ง URL ลึกเด็ดขาด
-- phase_title/phase_description: ต้องตอบเสมอ — ถ้ายังอยู่เฟสเดิมให้เขียนซ้ำชื่อ/คำอธิบายเฟสเดิมตามที่ให้มา ถ้าเป็นจุดเริ่มเฟสใหม่ให้ตั้งชื่อ/คำอธิบายเฟสใหม่ที่ต่อเนื่องจากภาพรวม roadmap`;
+You have no browser. You cannot verify that any course, video, instructor, lesson, or URL exists. Never invent course names, video titles, instructor names, claims that a specific lesson was found, or deep URLs.
 
+Write concise, friendly Thai. Build exactly one micro-skill that follows from the current phase. Never jump ahead, never repeat a recent quest, and make the learner do one clear next step.
+For every phase description, explicitly state its prerequisite and its outcome.
+Respect the learner's daily time budget exactly:
+- 15 minutes: 2-3 short tasks.
+- 30 minutes: exactly 3 short tasks.
+- 60 minutes: at most 4 short tasks.
+
+Use 2-4 checklist items. A checklist label must say "ค้นหา..." when it points the learner to search for something; it must not assert that a specific course or lesson was found.
+For every checklist item, link_url must be null or exactly one of these permitted search URL patterns:
+- https://www.youtube.com/results?search_query=<query>
+- https://www.google.com/search?q=<query>
+Use no homepage URL, deep URL, or any other URL. Do not name a specific resource unless it was supplied by the user.
+
+If a current phase is provided, preserve its prerequisite and outcome and make the micro-skill follow from them. If a new phase is required, make its prerequisite explicit and state the outcome it enables.
+Return JSON matching the schema exactly.`;
 function buildCuratedGrounding(outline) {
   if (!outline) return 'ไม่มีข้อมูลแหล่งเรียนเพิ่มเติมสำหรับหัวข้อนี้ ใช้ความรู้ทั่วไปได้แต่ห้ามแต่งลิงก์';
   const sources = (outline.sources ?? []).map((s) => `- ${s.label}: ${s.url}`).join('\n');
@@ -502,7 +597,12 @@ function buildContinuationPrompt({
     : 'ยังไม่มีเควสก่อนหน้าในรายการล่าสุด';
   const phaseCtx = needsNewPhase
     ? `วันนี้เป็นจุดเริ่มเฟสใหม่ (เฟสที่ ${targetPhaseNumber}) — ตั้งชื่อ/คำอธิบายเฟสใหม่ให้ต่อเนื่องจาก roadmap`
-    : `วันนี้ยังอยู่เฟสเดิม: "${currentPhase.title}" — ${currentPhase.description}\nให้ตอบ phase_title/phase_description ซ้ำตามนี้`;
+    // ตาราง phases มีแค่ title/description จริง ๆ ไม่มีคอลัมน์ prerequisite/outcome แยก
+    // (เช็คแล้วที่ schema.sql:133) — จึงส่ง description ไปตรง ๆ ตัวเดียว แล้วสั่งให้โมเดล
+    // "คงสิ่งที่ต้องรู้ก่อน/สิ่งที่ทำได้หลังจบเฟส" ที่ฝังอยู่ในคำอธิบายนั้นไว้
+    // (เวอร์ชันก่อนหน้าส่ง description ซ้ำสองช่องเป็น prerequisite กับ outcome ซึ่งไม่มีความหมาย)
+    : `วันนี้ยังอยู่เฟสเดิม: "${currentPhase.title}" — ${currentPhase.description}
+ให้ตอบ phase_title/phase_description ซ้ำตามนี้ และคงสิ่งที่ต้องรู้ก่อน (prerequisite) กับสิ่งที่ทำได้เมื่อจบเฟส (outcome) ที่ระบุไว้ในคำอธิบายเดิม`;
 
   return `หัวข้อ: "${topicTitle}"
 ระดับพื้นฐาน: ${LEVEL_LABEL_TH[level] ?? level}
@@ -519,77 +619,41 @@ ${phaseCtx}
 }
 
 // fallback แบบ static สำหรับหัวข้อ curated เท่านั้น เมื่อ Gemini หมด chain ทั้งหมด (#03)
-// starter_quests unique(topic_id, level) มีแค่ 1 แถวต่อคู่ — ใช้ได้จริงแค่ถ้ายังไม่เคยถูกก๊อปเข้า roadmap นี้มาก่อน (ปกติ day 1 กินไปแล้ว)
-async function tryStarterFallback(admin, { roadmap, dayNumber, phase }) {
+// starter_quests has one authored row per (topic_id, level, day_number) for authored days and static fallback.
+async function tryStarterFallback(admin, { roadmap, dayNumber, phase, scheduledDate, claimToken }) {
   const { data: starter } = await admin
     .from('starter_quests')
     .select('id, title, description, content, checklist, xp_reward')
     .eq('topic_id', roadmap.topic_id)
     .eq('level', roadmap.level)
+    .eq('day_number', dayNumber)
     .maybeSingle();
   if (!starter) return { failed: true };
-
-  const { data: alreadyUsed } = await admin
-    .from('daily_quests')
-    .select('id')
-    .eq('roadmap_id', roadmap.id)
-    .eq('source_starter_id', starter.id)
-    .maybeSingle();
-  if (alreadyUsed) return { failed: true };
-
-  const { data: quest, error: questErr } = await admin
-    .from('daily_quests')
-    .insert({
-      roadmap_id: roadmap.id,
-      phase_id: phase?.id ?? null,
-      day_number: dayNumber,
-      title: starter.title,
-      description: starter.description,
-      content: starter.content ?? {},
-      xp_reward: starter.xp_reward ?? 10,
-      source_starter_id: starter.id,
-    })
-    .select('id, roadmap_id, phase_id, day_number, title, description, content, xp_reward')
-    .single();
-
-  if (questErr) {
-    // race กับ cron tick อื่น: วันนี้ถูกสร้างไปแล้ว -> ถือว่าสำเร็จโดยคนอื่น คืนแถวเดิม
-    if (questErr.code === '23505') {
-      const { data: existing } = await admin
-        .from('daily_quests')
-        .select('id, roadmap_id, phase_id, day_number, title, description, content, xp_reward')
-        .eq('roadmap_id', roadmap.id)
-        .eq('day_number', dayNumber)
-        .maybeSingle();
-      if (existing) {
-        const { data: existingChecklist } = await admin
-          .from('quest_checklist_items')
-          .select('id, order_index, label, link_url')
-          .eq('quest_id', existing.id);
-        return { quest: existing, checklist: existingChecklist ?? [], phase, failed: false };
-      }
-    }
-    return { failed: true };
-  }
 
   const checklistItems =
     Array.isArray(starter.checklist) && starter.checklist.length
       ? starter.checklist
       : [{ label: 'อ่าน/ดูแหล่งเรียนของหัวข้อนี้ต่อ', link_url: null }];
-  const rows = checklistItems.map((item, i) => ({
-    quest_id: quest.id,
+  const checklist = checklistItems.map((item, i) => ({
     order_index: item.order_index ?? i,
     label: item.label ?? `ขั้นตอนที่ ${i + 1}`,
     link_url: item.link_url ?? null,
   }));
-  const { data: checklist, error: checklistErr } = await admin
-    .from('quest_checklist_items')
-    .insert(rows)
-    .select('id, order_index, label, link_url');
-  // checklist ว่างเปล่าทำให้ complete-quest.js gating ผ่านฟรี (requiredIds.length===0) — ห้ามคืน success ถ้า insert พัง
-  if (checklistErr) return { failed: true };
+  const created = await createQuestWithChecklist(admin, {
+    roadmapId: roadmap.id,
+    phaseId: phase?.id ?? null,
+    dayNumber,
+    scheduledDate,
+    title: starter.title,
+    description: starter.description,
+    content: starter.content ?? {},
+    xpReward: starter.xp_reward ?? 10,
+    sourceStarterId: starter.id,
+    checklist,
+    claimToken,
+  });
 
-  return { quest, checklist: checklist ?? [], phase, failed: false };
+  return { ...created, phase, failed: false };
 }
 
 /**
@@ -608,7 +672,7 @@ async function tryStarterFallback(admin, { roadmap, dayNumber, phase }) {
  *      phase    = แถว phases ที่เควสนี้อยู่ (อาจเป็น null ได้เฉพาะกรณี fallback แบบ static ที่หา/สร้าง phase ใหม่ไม่ได้)
  *  - ล้มเหลว (ไม่มี error object — ผู้เรียกควรข้าม roadmap นี้ไปคืนนี้ ไม่ throw): { failed: true }
  */
-export async function generateNextQuest(admin, { roadmap, dayNumber }) {
+export async function generateNextQuest(admin, { roadmap, dayNumber, scheduledDate = learningDayStr() }) {
   const { data: phases } = await admin
     .from('phases')
     .select('id, roadmap_id, phase_number, title, description')
@@ -626,6 +690,29 @@ export async function generateNextQuest(admin, { roadmap, dayNumber }) {
     .order('day_number', { ascending: false })
     .limit(5);
   const recentTitles = (recentQuests ?? []).map((q) => q.title).filter(Boolean);
+
+  const claim = await claimGeneration(admin, { roadmapId: roadmap.id, dayNumber });
+  if (claim.status === 'ready') {
+    return { quest: claim.quest, checklist: claim.checklist, phase: existingPhase, failed: false };
+  }
+  if (claim.status === 'generating') {
+    return { quest: null, checklist: [], phase: existingPhase, failed: true };
+  }
+  if (claim.status === 'failed') {
+    return { quest: null, checklist: [], phase: existingPhase, failed: true };
+  }
+  const { claimToken } = claim;
+
+  if (roadmap.topic_id) {
+    const authored = await tryStarterFallback(admin, {
+      roadmap,
+      dayNumber,
+      phase: existingPhase,
+      scheduledDate,
+      claimToken,
+    });
+    if (!authored.failed) return authored;
+  }
 
   let grounding;
   if (roadmap.topic_id) {
@@ -655,14 +742,25 @@ export async function generateNextQuest(admin, { roadmap, dayNumber }) {
       temperature: 0.9,
     });
   } catch (err) {
-    if (!err?.exhausted) throw err; // bug/env error จริง โยนต่อ ไม่ silent fallback
+    if (!err?.exhausted) {
+      await releaseGenerationClaim(admin, { roadmapId: roadmap.id, dayNumber, claimToken });
+      throw err; // bug/env error จริง โยนต่อ ไม่ silent fallback
+    }
   }
 
   if (!generated) {
     // Gemini หมด chain: curated มี starter_quests ให้ลองเป็นทางสำรอง, freeform ไม่มี (ห้ามแต่งเนื้อหา) -> failed ตรง ๆ
     if (roadmap.topic_id) {
-      return tryStarterFallback(admin, { roadmap, dayNumber, phase: existingPhase });
+      const authored = await tryStarterFallback(admin, {
+        roadmap,
+        dayNumber,
+        phase: existingPhase,
+        scheduledDate,
+        claimToken,
+      });
+      if (!authored.failed) return authored;
     }
+    await releaseGenerationClaim(admin, { roadmapId: roadmap.id, dayNumber, claimToken });
     return { failed: true };
   }
 
@@ -697,50 +795,23 @@ export async function generateNextQuest(admin, { roadmap, dayNumber }) {
   }
 
   const checklist = sanitizeChecklistLinks(generated.checklist, roadmap.topic_title);
-
-  const { data: quest, error: questErr } = await admin
-    .from('daily_quests')
-    .insert({
-      roadmap_id: roadmap.id,
-      phase_id: phase?.id ?? null,
-      day_number: dayNumber,
-      title: String(generated.title).slice(0, 200),
-      description: String(generated.description ?? '').slice(0, 500),
-      content: {},
-      xp_reward: clampXp(generated.xp_reward),
-    })
-    .select('id, roadmap_id, phase_id, day_number, title, description, content, xp_reward')
-    .single();
-
-  if (questErr) {
-    // race: อีก cron tick/invocation แทรกวันเดียวกันไปก่อนแล้ว — ถือว่าสำเร็จโดยคนอื่น คืนแถวเดิม (idempotent ตามสเปก #03/#15)
-    if (questErr.code === '23505') {
-      const { data: existing } = await admin
-        .from('daily_quests')
-        .select('id, roadmap_id, phase_id, day_number, title, description, content, xp_reward')
-        .eq('roadmap_id', roadmap.id)
-        .eq('day_number', dayNumber)
-        .single();
-      const { data: existingChecklist } = await admin
-        .from('quest_checklist_items')
-        .select('id, order_index, label, link_url')
-        .eq('quest_id', existing.id);
-      return { quest: existing, checklist: existingChecklist ?? [], phase, failed: false };
-    }
-    throw questErr;
+  if (checklist.length === 0) {
+    await releaseGenerationClaim(admin, { roadmapId: roadmap.id, dayNumber, claimToken });
+    return { failed: true };
   }
+  const created = await createQuestWithChecklist(admin, {
+    roadmapId: roadmap.id,
+    phaseId: phase?.id ?? null,
+    dayNumber,
+    scheduledDate,
+    title: String(generated.title).slice(0, 200),
+    description: String(generated.description ?? '').slice(0, 500),
+    content: {},
+    xpReward: clampXp(generated.xp_reward),
+    sourceStarterId: null,
+    checklist: checklist.map((item, i) => ({ ...item, order_index: i })),
+    claimToken,
+  });
 
-  const rows = checklist.map((item, i) => ({
-    quest_id: quest.id,
-    order_index: i,
-    label: item.label,
-    link_url: item.link_url,
-  }));
-  const { data: checklistData, error: checklistErr } = await admin
-    .from('quest_checklist_items')
-    .insert(rows)
-    .select('id, order_index, label, link_url');
-  if (checklistErr) throw checklistErr;
-
-  return { quest, checklist: checklistData ?? [], phase, failed: false };
+  return { ...created, phase, failed: false };
 }

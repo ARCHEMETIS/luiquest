@@ -5,6 +5,14 @@ import { getAdminClient } from './_shared/supabaseAdmin.js';
 import { bangkokDateStr, startOfBangkokDayISO } from './_shared/datetime.js';
 // GRADE_BANDS ส่งเข้า RPC complete_quest — single source of truth เดิม (streak/grade คำนวณใน SQL แล้ว)
 import { GRADE_BANDS } from '../../src/lib/gradeBands.js';
+import { topicKeyOf } from './_shared/topicKey.js';
+
+export const EMPTY_CHECKLIST_ERROR = 'เควสนี้ยังไม่มี checklist ให้ติ๊ก กรุณาลองใหม่ภายหลัง';
+
+export function validateChecklist(requiredIds, checkedIds) {
+  if (requiredIds.length === 0) return { ok: false, error: EMPTY_CHECKLIST_ERROR };
+  return { ok: requiredIds.every((id) => checkedIds.has(id)) };
+}
 
 export default async (req) => {
   if (req.method !== 'POST') return json(405, { error: 'Method Not Allowed' });
@@ -19,13 +27,17 @@ export default async (req) => {
 
   const admin = getAdminClient();
 
+  // ดึง topic มาด้วยเพื่อสร้าง topic_key ให้ ledger — ต้องเป็นค่าที่ "อยู่รอด" แม้ผู้ใช้ลบหัวข้อทิ้ง
+  // (slug ของ curated / ชื่อ normalize ของ freeform) ห้ามใช้ roadmap_id เพราะสร้างใหม่แล้วได้ id ใหม่
   const { data: quest, error: questErr } = await admin
     .from('daily_quests')
-    .select('id, roadmap_id, xp_reward, roadmaps!inner(user_id)')
+    .select('id, roadmap_id, xp_reward, roadmaps!inner(user_id, topic_title, topics(slug))')
     .eq('id', questId)
     .maybeSingle();
   if (questErr) return json(500, { error: questErr.message });
   if (!quest || quest.roadmaps.user_id !== user.id) return json(404, { error: 'ไม่พบเควสนี้' });
+
+  const topicKey = topicKeyOf(quest.roadmaps);
 
   const { data: existing } = await admin
     .from('quest_completions')
@@ -49,7 +61,11 @@ export default async (req) => {
   if (checklistErr) return json(500, { error: checklistErr.message });
 
   const requiredIds = (checklist ?? []).map((c) => c.id);
-  const allChecked = requiredIds.every((id) => checkedIds.has(id));
+  const checklistResult = validateChecklist(requiredIds, checkedIds);
+  if (!checklistResult.ok && checklistResult.error) {
+    return json(400, { error: checklistResult.error });
+  }
+  const allChecked = checklistResult.ok;
   if (requiredIds.length > 0 && !allChecked) {
     return json(400, { error: 'ติ๊ก checklist ให้ครบทุกข้อก่อนถึงจะได้ XP' });
   }
@@ -65,12 +81,18 @@ export default async (req) => {
     p_checked_items: [...checkedIds],
     p_today: bangkokDateStr(),
     p_grade_bands: GRADE_BANDS,
-    p_metadata: { quest_id: questId, roadmap_id: quest.roadmap_id, xp_earned: quest.xp_reward, day_start: startOfBangkokDayISO() },
+    p_metadata: { quest_id: questId, roadmap_id: quest.roadmap_id, xp_earned: quest.xp_reward, day_start: startOfBangkokDayISO(), topic_key: topicKey },
+    // ledger กันปั๊ม XP: นับจาก (user, หัวข้อ, วันไทย) ที่ไม่โดน cascade ตอนลบ roadmap
+    p_topic_key: topicKey,
   });
   if (rpcErr) return json(500, { error: rpcErr.message });
 
   return json(200, {
     alreadyCompleted: result.already_completed,
+    // ชนเพดานเควสที่ได้ XP ของหัวข้อนี้วันนี้ — เควสถือว่าทำเสร็จแล้ว แต่ไม่ได้ XP
+    // (เกิดได้ 2 ทาง: ลบหัวข้อแล้วสร้างใหม่เพื่อปั๊ม, หรือ cron สร้างเควสวันถัดไปตอนตี 2
+    //  แล้วผู้ใช้เคลมก่อนรีเซ็ตตี 5) frontend เอาไปแสดงข้อความให้ตรงเหตุได้
+    dailyLimitReached: result.daily_limit_reached ?? false,
     xp_earned: result.xp_earned,
     total_xp: result.total_xp,
     current_streak: result.current_streak,

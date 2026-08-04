@@ -29,6 +29,23 @@ export function prevDateStr(s) {
   return new Date(Date.UTC(y, m - 1, dd - 1)).toISOString().slice(0, 10);
 }
 
+export function nextDateStr(s) {
+  const [y, m, dd] = s.split('-').map(Number);
+  return new Date(Date.UTC(y, m - 1, dd + 1)).toISOString().slice(0, 10);
+}
+
+// วันเรียนเปลี่ยนตอน 05:00 เพื่อไม่ให้เควสที่ cron เตรียมตอนตี 2 โผล่ก่อนเวลารีเซ็ต
+export function learningDayStr(d = new Date()) {
+  const off = tzOffsetMs(d, TZ);
+  const wall = new Date(d.getTime() + off);
+  const date = wall.toISOString().slice(0, 10);
+  return wall.getUTCHours() < 5 ? prevDateStr(date) : date;
+}
+
+export function nextLearningDayStr(d = new Date()) {
+  return nextDateStr(learningDayStr(d));
+}
+
 // เที่ยงคืนไทยถัดไป (ISO) — ใช้บอกเวลารีเซ็ตโควต้าแชท
 export function nextBangkokMidnightISO() {
   const now = new Date();

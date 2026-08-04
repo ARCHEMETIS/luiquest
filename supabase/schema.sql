@@ -2,7 +2,7 @@
 --  ลุยเควส (LuiQuest) — Supabase schema (ticket #03 / build-wave1)
 --  ที่มา: .scratch/app-v2-spec/assets/supabase-schema.md
 --  รันทั้งไฟล์ใน Supabase SQL Editor (project luiquest)
---  14 ตาราง + 3 view + RLS ทุกตาราง + bucket payment-slips
+--  16 ตาราง + 4 view + RLS ทุกตาราง + bucket payment-slips
 --  bootstrap admin: update profiles set is_admin=true where id='<owner-uuid>'
 -- ============================================================
 
@@ -171,6 +171,20 @@ create table public.quest_checklist_items (
 
 create index idx_checklist_quest on public.quest_checklist_items(quest_id);
 
+-- รวม claim และการเขียน quest/checklist ไว้ที่ DB เพื่อกัน Gemini ซ้ำและเควสเขียนค้างครึ่งเดียว
+create table public.quest_generation_claims (
+  roadmap_id  uuid not null references public.roadmaps(id) on delete cascade,
+  day_number  integer not null,
+  claim_token uuid not null,
+  status      text not null default 'generating' check (status in ('generating', 'ready', 'failed')),
+  claimed_at  timestamptz not null default now(),
+  quest_id    uuid references public.daily_quests(id) on delete set null,
+  primary key (roadmap_id, day_number)
+);
+
+create index idx_quest_generation_claims_stale
+  on public.quest_generation_claims(status, claimed_at);
+
 create table public.quest_completions (
   id            uuid primary key default gen_random_uuid(),
   user_id       uuid not null references public.profiles(id) on delete cascade,
@@ -185,17 +199,47 @@ create table public.quest_completions (
 create index idx_completions_user on public.quest_completions(user_id);
 create index idx_completions_completed_at on public.quest_completions(completed_at);
 
+-- 2026-08-04 — ปิดช่องปั๊ม XP ถาวรด้วย ledger ที่ไม่ผูกกับ roadmap
+-- ตารางนี้ต้อง **ไม่มี FK ไป roadmaps/daily_quests** ไม่งั้นก็โดน cascade ตามไปอีก
+create table public.xp_awards (
+  id          bigint generated always as identity primary key,
+  user_id     uuid not null references public.profiles(id) on delete cascade,
+
+  -- ★ กุญแจที่อยู่รอดแม้ลบ roadmap:
+  --   curated  = 'topic:<topics.slug>'         (slug คงที่ตลอด ไม่ผูกกับ roadmap ของใคร)
+  --   freeform = 'free:<ชื่อหัวข้อ normalize>'  (roadmaps.topic_id เป็น null สำหรับ freeform)
+  topic_key   text not null,
+
+  award_date  date not null,              -- วันตามเวลาไทย (คำนวณฝั่ง JS เหมือน p_today เดิม)
+  xp          integer not null,
+
+  -- อ้างอิงเพื่อ audit เท่านั้น — **จงใจไม่ใส่ FK** ถ้าใส่แล้วจะโดน cascade ตอนลบ roadmap
+  -- ซึ่งคือบั๊กที่ตารางนี้ตั้งใจแก้ตั้งแต่แรก
+  roadmap_id  uuid,
+  quest_id    uuid,
+
+  created_at  timestamptz not null default now()
+);
+
+create index idx_xp_awards_user_date on public.xp_awards(user_id, award_date);
+create index idx_xp_awards_lookup    on public.xp_awards(user_id, topic_key, award_date);
+create index idx_xp_awards_created   on public.xp_awards(created_at);  -- กราฟโตในหน้า /stats
+create unique index uniq_xp_award_per_quest
+  on public.xp_awards(user_id, quest_id)
+  where quest_id is not null;
+
 create table public.starter_quests (
   id           uuid primary key default gen_random_uuid(),
   topic_id     uuid not null references public.topics(id) on delete cascade,
   level        text not null check (level in ('beginner','intermediate','advanced')),
+  day_number   integer not null default 1,  -- วันที่ใน roadmap bank
   title        text not null,
   description  text,
   content      jsonb,                    -- เนื้อเควสเต็ม
   checklist    jsonb,                    -- checklist items (embed ในนี้ ตอนก๊อปค่อยแตกเป็นแถว)
   xp_reward    integer not null default 10,
   created_at   timestamptz not null default now(),
-  unique (topic_id, level)               -- 6 หัวข้อ × 3 ระดับ = 18 ชุด ไม่ซ้ำ
+  unique (topic_id, level, day_number)   -- อนุญาตหลายวันต่อหัวข้อ/ระดับ
 );
 
 -- FK ของ daily_quests.source_starter_id (เพิ่มตรงนี้เพราะ daily_quests สร้างก่อน starter_quests)
@@ -252,20 +296,22 @@ $$;
 -- ผู้ใช้ anon/authenticated จะยิง PostgREST /rpc/redeem_referral ตรง ๆ แจก XP เองได้เลย ต้องปิด
 revoke execute on function public.redeem_referral(uuid, uuid, integer) from public, anon, authenticated;
 
--- Complete quest แบบ atomic ในทีเดียว (scrutinize 2026-07-15 Major 4) — เดิม complete-quest.js
--- อ่าน total_xp แล้วค่อย update (read-modify-write) ทำ 2 เควสพร้อมกัน/ชน redeem_referral แล้ว
--- lost update ได้ ตอนนี้ lock แถว profiles + increment ใน transaction เดียวของ Postgres
--- gating checklist + ownership ยังเช็คฝั่ง complete-quest.js ก่อนเรียก (ต้องอ่าน checklist อยู่แล้ว)
--- p_grade_bands: ส่ง GRADE_BANDS มาจาก JS — single source of truth คือ src/lib/gradeBands.js
+-- complete_quest เวอร์ชันใหม่: บังคับเพดานรายวันจาก ledger ก่อนแจก XP
+-- ทำไมใช้ "นับใต้ล็อก" แทน unique constraint: premium ต้องทำได้ >1 ครั้ง/วัน (จุดขายที่เจ้าของ
+-- เลือก) ซึ่ง unique(user,topic,date) จะบล็อกตั้งแต่ครั้งที่ 2 — แถว profiles ถูกล็อกด้วย
+-- `for update` ตลอด transaction อยู่แล้ว การนับใต้ล็อกจึงกัน race ได้จริงเท่ากัน
 create or replace function public.complete_quest(
-  p_user_id       uuid,
-  p_quest_id      uuid,
-  p_roadmap_id    uuid,
-  p_xp            integer,
-  p_checked_items jsonb,
-  p_today         date,      -- "วันนี้" ตามเวลาไทย คำนวณฝั่ง JS (bangkokDateStr)
-  p_grade_bands   jsonb,     -- [{grade,min}, ...] เรียงจาก min น้อย→มาก
-  p_metadata      jsonb      -- payload ของ activity_log event quest_complete
+  p_user_id           uuid,
+  p_quest_id          uuid,
+  p_roadmap_id        uuid,
+  p_xp                integer,
+  p_checked_items     jsonb,
+  p_today             date,      -- "วันนี้" ตามเวลาไทย คำนวณฝั่ง JS (bangkokDateStr)
+  p_grade_bands       jsonb,     -- [{grade,min}, ...] เรียงจาก min น้อย→มาก
+  p_metadata          jsonb,     -- payload ของ activity_log event quest_complete
+  p_topic_key         text,      -- 'topic:<slug>' | 'free:<ชื่อ normalize>' — อยู่รอดแม้ลบ roadmap
+  p_free_allowance    integer default 1,   -- ฟรี: 1 เควสที่ได้ XP ต่อวัน ต่อหัวข้อ
+  p_premium_allowance integer default 3    -- premium: จุดขาย "ทำเควสได้มากกว่า 1 ต่อวัน"
 )
 returns jsonb
 language plpgsql
@@ -273,13 +319,27 @@ security definer
 set search_path = public
 as $$
 declare
-  v_profile     record;
-  v_existing_xp integer;
-  v_new_streak  integer;
-  v_new_longest integer;
-  v_new_total   integer;
-  v_grade       text;
+  v_profile      record;
+  v_existing_xp  integer;
+  v_new_streak   integer;
+  v_new_longest  integer;
+  v_new_total    integer;
+  v_grade        text;
+  v_awards_today integer;
+  v_allowance    integer;
 begin
+  -- ★ ล็อกแถว profile เป็นอย่างแรก: ทั้งการนับโควตารายวันและการบวก total_xp ต้องอยู่ใต้ล็อกเดียวกัน
+  -- ไม่งั้นสองคำขอพร้อมกันจะนับเห็น 0 ทั้งคู่แล้วแจก XP ซ้ำ (เคสเดียวกับที่ chat.js เป็นอยู่)
+  select total_xp, current_streak, longest_streak, last_quest_date, is_premium
+  into v_profile
+  from public.profiles
+  where id = p_user_id
+  for update;
+
+  if not found then
+    raise exception 'ไม่พบโปรไฟล์ผู้ใช้ %', p_user_id;
+  end if;
+
   -- idempotent: unique (user_id, quest_id) — double-submit/race แทรกซ้ำจะ conflict แล้วข้าม
   insert into public.quest_completions (user_id, quest_id, roadmap_id, xp_earned, checked_items)
   values (p_user_id, p_quest_id, p_roadmap_id, p_xp, p_checked_items)
@@ -291,26 +351,55 @@ begin
     from public.quest_completions
     where user_id = p_user_id and quest_id = p_quest_id;
 
-    select total_xp, current_streak, longest_streak, grade
-    into v_profile
-    from public.profiles where id = p_user_id;
-
     return jsonb_build_object(
       'already_completed', true,
+      'daily_limit_reached', false,
       'xp_earned', coalesce(v_existing_xp, p_xp),
       'total_xp', v_profile.total_xp,
       'current_streak', v_profile.current_streak,
       'longest_streak', v_profile.longest_streak,
-      'grade', v_profile.grade
+      'grade', (select grade from public.profiles where id = p_user_id)
     );
   end if;
 
-  -- lock แถว profile: ธุรกรรมอื่นที่แตะ total_xp (เควสขนาน/redeem_referral) ต้องรอคิว → ไม่มี lost update
-  select total_xp, current_streak, longest_streak, last_quest_date
-  into v_profile
-  from public.profiles
-  where id = p_user_id
-  for update;
+  -- ★ เพดานรายวันจาก ledger ที่ไม่ผูกกับ roadmap → ลบหัวข้อแล้วสร้างใหม่ก็ยังชนเพดานเดิม
+  v_allowance := case when v_profile.is_premium then p_premium_allowance else p_free_allowance end;
+
+  select count(*) into v_awards_today
+  from public.xp_awards
+  where user_id = p_user_id
+    and topic_key = p_topic_key
+    and award_date = p_today;
+
+  if v_awards_today >= v_allowance then
+    -- เควสถือว่าทำเสร็จแล้ว (แถว completion บันทึกไปแล้ว UI จะได้ไม่ค้าง) แต่ไม่แจก XP
+    return jsonb_build_object(
+      'already_completed', false,
+      'daily_limit_reached', true,
+      'xp_earned', 0,
+      'total_xp', v_profile.total_xp,
+      'current_streak', v_profile.current_streak,
+      'longest_streak', v_profile.longest_streak,
+      'grade', (select grade from public.profiles where id = p_user_id)
+    );
+  end if;
+
+  -- จดลง ledger ก่อนแตะ total_xp — ถ้าชน uniq_xp_award_per_quest แปลว่าเควสนี้เคยจ่าย XP ไปแล้ว
+  insert into public.xp_awards (user_id, topic_key, award_date, xp, roadmap_id, quest_id)
+  values (p_user_id, p_topic_key, p_today, p_xp, p_roadmap_id, p_quest_id)
+  on conflict do nothing;
+
+  if not found then
+    return jsonb_build_object(
+      'already_completed', true,
+      'daily_limit_reached', false,
+      'xp_earned', 0,
+      'total_xp', v_profile.total_xp,
+      'current_streak', v_profile.current_streak,
+      'longest_streak', v_profile.longest_streak,
+      'grade', (select grade from public.profiles where id = p_user_id)
+    );
+  end if;
 
   -- streak logic เดียวกับ _shared/gameplay.js nextStreak (วันเดิม=คงเดิม, เมื่อวาน=+1, อื่น ๆ/null=เริ่ม 1)
   v_new_streak := case
@@ -343,6 +432,7 @@ begin
 
   return jsonb_build_object(
     'already_completed', false,
+    'daily_limit_reached', false,
     'xp_earned', p_xp,
     'total_xp', v_new_total,
     'current_streak', v_new_streak,
@@ -354,7 +444,159 @@ $$;
 
 -- ปิด EXECUTE จาก client เหมือน redeem_referral — security definer ไม่เช็คสิทธิ์เอง ถ้าไม่ revoke
 -- anon/authenticated ยิง PostgREST /rpc/complete_quest ตรง ๆ ข้าม gating checklist ได้
-revoke execute on function public.complete_quest(uuid, uuid, uuid, integer, jsonb, date, jsonb, jsonb) from public, anon, authenticated;
+revoke execute on function public.complete_quest(uuid, uuid, uuid, integer, jsonb, date, jsonb, jsonb, text, integer, integer)
+  from public, anon, authenticated;
+
+create or replace function public.create_quest_with_checklist(
+  p_roadmap_id       uuid,
+  p_phase_id         uuid,
+  p_day_number       integer,
+  p_scheduled_date   date,
+  p_title            text,
+  p_description      text,
+  p_content          jsonb,
+  p_xp_reward        integer,
+  p_source_starter_id uuid,
+  p_checklist        jsonb,
+  p_claim_token      uuid
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_claim     record;
+  v_quest     public.daily_quests%rowtype;
+  v_checklist jsonb;
+begin
+  if jsonb_typeof(coalesce(p_checklist, '[]'::jsonb)) <> 'array'
+     or jsonb_array_length(coalesce(p_checklist, '[]'::jsonb)) = 0 then
+    raise exception 'เควสต้องมี checklist อย่างน้อย 1 ข้อ';
+  end if;
+
+  if p_claim_token is not null then
+    select * into v_claim
+    from public.quest_generation_claims
+    where roadmap_id = p_roadmap_id
+      and day_number = p_day_number
+      and status = 'generating'
+      and claim_token = p_claim_token
+    for update;
+
+    if not found then
+      raise exception 'generation claim หมดอายุหรือถูกแทนที่แล้ว';
+    end if;
+  end if;
+
+  insert into public.daily_quests (
+    roadmap_id, phase_id, day_number, scheduled_date, title, description,
+    content, xp_reward, source_starter_id
+  )
+  values (
+    p_roadmap_id, p_phase_id, p_day_number, p_scheduled_date, p_title, p_description,
+    coalesce(p_content, '{}'::jsonb), p_xp_reward, p_source_starter_id
+  )
+  returning * into v_quest;
+
+  insert into public.quest_checklist_items (quest_id, order_index, label, link_url)
+  select
+    v_quest.id,
+    coalesce(nullif(item->>'order_index', '')::integer, ordinality::integer - 1),
+    item->>'label',
+    nullif(item->>'link_url', '')
+  from jsonb_array_elements(p_checklist) with ordinality as items(item, ordinality);
+
+  if p_claim_token is not null then
+    update public.quest_generation_claims
+    set status = 'ready', quest_id = v_quest.id, claimed_at = now()
+    where roadmap_id = p_roadmap_id
+      and day_number = p_day_number
+      and claim_token = p_claim_token;
+  end if;
+
+  select coalesce(
+    jsonb_agg(
+      jsonb_build_object('id', c.id, 'order_index', c.order_index, 'label', c.label, 'link_url', c.link_url)
+      order by c.order_index
+    ),
+    '[]'::jsonb
+  ) into v_checklist
+  from public.quest_checklist_items c
+  where c.quest_id = v_quest.id;
+
+  return jsonb_build_object('quest', to_jsonb(v_quest), 'checklist', v_checklist);
+end;
+$$;
+
+revoke execute on function public.create_quest_with_checklist(uuid, uuid, integer, date, text, text, jsonb, integer, uuid, jsonb, uuid)
+  from public, anon, authenticated;
+
+create or replace function public.get_eligible_roadmaps_for_generation(p_limit integer default 3)
+returns table (
+  id                 uuid,
+  topic_id           uuid,
+  topic_title        text,
+  level              text,
+  minutes_per_day    integer,
+  content            jsonb,
+  day_number         integer,
+  last_generated_at  timestamptz
+)
+language sql
+security definer
+set search_path = public
+as $$
+  select
+    r.id,
+    r.topic_id,
+    r.topic_title,
+    r.level,
+    r.minutes_per_day,
+    r.content,
+    latest.day_number + 1,
+    latest.created_at
+  from public.roadmaps r
+  join lateral (
+    select q.id, q.day_number, q.created_at
+    from public.daily_quests q
+    where q.roadmap_id = r.id
+    order by q.day_number desc
+    limit 1
+  ) latest on true
+  left join public.quest_generation_claims claim
+    on claim.roadmap_id = r.id
+   and claim.day_number = latest.day_number + 1
+  where r.is_active = true
+    and r.status = 'ready'
+    and exists (
+      select 1
+      from public.quest_completions c
+      where c.quest_id = latest.id
+        and c.user_id = r.user_id
+    )
+    and not exists (
+      select 1
+      from public.daily_quests next_q
+      where next_q.roadmap_id = r.id
+        and next_q.day_number = latest.day_number + 1
+    )
+    and not exists (
+      select 1
+      from public.quest_generation_claims claim
+      where claim.roadmap_id = r.id
+        and claim.day_number = latest.day_number + 1
+        and (
+          claim.status = 'ready'
+          or (claim.status in ('generating', 'failed') and claim.claimed_at >= now() - interval '2 minutes')
+        )
+      )
+  order by greatest(latest.created_at, coalesce(claim.claimed_at, latest.created_at)) asc, r.created_at asc, r.id asc
+  limit greatest(0, least(coalesce(p_limit, 3), 3));
+$$;
+
+revoke execute on function public.get_eligible_roadmaps_for_generation(integer)
+  from public, anon, authenticated;
 
 create table public.chat_messages (
   id          bigint generated always as identity primary key,
@@ -401,6 +643,98 @@ create table public.activity_log (
 
 create index idx_activity_user_date on public.activity_log(user_id, created_at);
 create index idx_activity_type_date on public.activity_log(event_type, created_at);
+
+-- ตรวจ payment + ต่ออายุสิทธิ์ + บันทึก activity ใน transaction เดียว
+-- security definer จำเป็นเพราะ endpoint ใช้ service role แต่ห้ามเปิด RPC ให้ client ยิงเอง
+create or replace function public.verify_payment(p_payment_id uuid, p_admin_id uuid)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_payment       public.payments%rowtype;
+  v_premium_until timestamptz;
+begin
+  if not exists (
+    select 1 from public.profiles where id = p_admin_id and is_admin = true
+  ) then
+    raise exception using errcode = '42501', message = 'admin_required';
+  end if;
+
+  select * into v_payment
+  from public.payments
+  where id = p_payment_id
+  for update;
+
+  if not found then
+    raise exception using errcode = 'P0002', message = 'payment_not_found';
+  end if;
+  if v_payment.status <> 'submitted' then
+    raise exception using errcode = 'P0001', message = 'payment_not_submitted';
+  end if;
+
+  update public.profiles
+  set is_premium = true,
+      premium_until = greatest(now(), coalesce(premium_until, now())) + interval '1 month'
+  where id = v_payment.user_id
+  returning premium_until into v_premium_until;
+
+  if not found then
+    raise exception using errcode = 'P0003', message = 'payment_owner_not_found';
+  end if;
+
+  update public.payments
+  set status = 'verified',
+      verified_at = now(),
+      verified_by = p_admin_id
+  where id = v_payment.id;
+
+  insert into public.activity_log (user_id, event_type, metadata)
+  values (
+    v_payment.user_id,
+    'premium_submit',
+    jsonb_build_object(
+      'payment_id', v_payment.id,
+      'ref_code', v_payment.ref_code,
+      'amount', v_payment.amount,
+      'action', 'verify',
+      'verified_by', p_admin_id
+    )
+  );
+
+  return jsonb_build_object(
+    'payment_id', v_payment.id,
+    'ref_code', v_payment.ref_code,
+    'status', 'verified',
+    'premium_until', v_premium_until,
+    'verified_by', p_admin_id
+  );
+end;
+$$;
+
+revoke execute on function public.verify_payment(uuid, uuid) from public, anon, authenticated;
+
+-- Aggregate ใน SQL เพื่อให้ admin endpoint ไม่ต้องดึง payment history ทั้งหมดมารวมเอง
+create view public.payment_admin_stats as
+with monthly as (
+  select
+    to_char(date_trunc('month', verified_at), 'YYYY-MM') as month,
+    sum(amount)::integer as amount
+  from public.payments
+  where status = 'verified' and verified_at is not null
+  group by date_trunc('month', verified_at)
+  order by date_trunc('month', verified_at)
+)
+select
+  coalesce((select sum(amount)::integer from public.payments where status = 'verified'), 0)::integer as revenue_total,
+  coalesce((select jsonb_agg(jsonb_build_object('month', month, 'amount', amount) order by month) from monthly), '[]'::jsonb) as revenue_by_month,
+  (select count(distinct user_id)::integer from public.payments where status = 'verified') as payers_total,
+  (select count(*)::integer from public.payments where status = 'pending') as pending_count,
+  (select count(*)::integer from public.payments where status = 'submitted') as submitted_count;
+
+revoke all on public.payment_admin_stats from public, anon, authenticated;
+grant select on public.payment_admin_stats to service_role;
 
 -- เพื่อน/duo (เห็น streak กัน) — #06 Wave 2
 create table public.friendships (
@@ -474,6 +808,8 @@ alter table public.phases                enable row level security;
 alter table public.daily_quests          enable row level security;
 alter table public.quest_checklist_items enable row level security;
 alter table public.quest_completions     enable row level security;
+alter table public.xp_awards             enable row level security;
+alter table public.quest_generation_claims enable row level security;
 alter table public.starter_quests        enable row level security;
 alter table public.referrals             enable row level security;
 alter table public.chat_messages         enable row level security;
@@ -552,6 +888,11 @@ create policy "checklist_select_own" on public.quest_checklist_items
 create policy "completions_select_own" on public.quest_completions
   for select to authenticated using (auth.uid() = user_id);
 
+-- RLS: อ่านของตัวเองได้ (เผื่อ frontend อยากโชว์ประวัติ) — เขียนผ่าน service role (RPC) เท่านั้น
+create policy "xp_awards_select_own" on public.xp_awards
+  for select to authenticated using (auth.uid() = user_id);
+-- ไม่มี insert/update/delete policy โดยตั้งใจ — ถ้า client เขียนเองได้ ก็ปั๊ม XP ได้อีกทาง
+
 -- ไม่มี insert/update/delete policy → insert ทำผ่าน service role (RPC complete_quest) เท่านั้น
 -- กัน client เสก activated_total/quests_completed_total ปลอม (scrutinize 2026-07-15 Major 3)
 
@@ -562,23 +903,16 @@ create policy "referrals_select_involved" on public.referrals
 
 create policy "chat_select_own" on public.chat_messages
   for select to authenticated using (auth.uid() = user_id);
-create policy "chat_insert_own" on public.chat_messages
-  for insert to authenticated with check (auth.uid() = user_id);
+-- frontend อ่านอย่างเดียว (src/pages/Coach.jsx:51 เป็น .select() ล้วน) ไม่เคย insert
+-- ข้อความจริงถูกเขียนโดย netlify/functions/chat.js ผ่าน service role หลัง Gemini ตอบสำเร็จ
+-- ปล่อย insert policy ไว้ = ใครก็ยัดข้อความขนาดใหญ่เข้ามาเท่าไหร่ก็ได้ด้วย anon key
 
 -- เจ้าของอ่าน payment ของตัวเอง / admin อ่านทุกแถว
 create policy "payments_select_own_or_admin" on public.payments
   for select to authenticated
   using (auth.uid() = user_id or public.is_admin());
-
--- user สร้าง payment (pending) ของตัวเองได้
-create policy "payments_insert_own" on public.payments
-  for insert to authenticated with check (auth.uid() = user_id);
-
--- user อัปเดตแถวตัวเองได้เฉพาะตอนอัปสลิป (pending → submitted) ห้ามตั้ง verified เอง
-create policy "payments_update_own_submit" on public.payments
-  for update to authenticated
-  using (auth.uid() = user_id)
-  with check (auth.uid() = user_id and status in ('pending','submitted'));
+-- payment ทุกแถวสร้างและอัปเดตผ่าน function service role เท่านั้น
+-- (create-payment / submit-slip / verify-payment) — client ต้องการแค่ select ของตัวเอง
 
 -- admin อัปเดตได้ทุกแถว (verify/reject → ตั้ง verified/rejected + verified_by)
 create policy "payments_update_admin" on public.payments
@@ -599,9 +933,8 @@ create policy "friend_update_involved" on public.friendships
   for update to authenticated
   using (auth.uid() = requester_id or auth.uid() = addressee_id);
 
-create policy "push_all_own" on public.push_subscriptions
-  for all to authenticated
-  using (auth.uid() = user_id) with check (auth.uid() = user_id);
+-- web push เป็นงาน Wave 2 ที่ยังไม่ได้ทำ frontend ไม่แตะตารางนี้เลยสักบรรทัด
+-- policy เดิมเป็น for all จึงเปิด insert/update/delete ให้ authenticated ทุกคน — เอากลับมาเมื่อสร้างฟีเจอร์จริง
 
 -- สร้าง bucket แบบ private (ไม่ public)
 insert into storage.buckets (id, name, public)
@@ -636,12 +969,12 @@ on conflict (slug) do nothing;
 
 -- 2) starter_quests — โครง 18 แถว (topic × level). เนื้อ content/checklist เติมทีหลัง
 -- ตัวอย่าง 1 หัวข้อ (python) ครบ 3 ระดับ — ทำแพทเทิร์นเดียวกันให้ครบ 6 หัวข้อ = 18 แถว
-insert into public.starter_quests (topic_id, level, title, description, xp_reward, content, checklist)
-select t.id, v.level, v.title, v.description, 10, '{}'::jsonb, '[]'::jsonb
+insert into public.starter_quests (topic_id, level, day_number, title, description, xp_reward, content, checklist)
+select t.id, v.level, 1, v.title, v.description, 10, '{}'::jsonb, '[]'::jsonb
 from public.topics t
 join (values
   ('python','beginner',     'เควสแรก: ติดตั้ง Python + พิมพ์ "สวัสดี"', 'รู้จัก Python แล้วรันโค้ดแรกใน Colab'),
   ('python','intermediate', 'เควสแรก: ทบทวนตัวแปร + เขียน loop สั้น ๆ',  'วอร์มพื้นฐานที่พอมีอยู่แล้วให้แน่น'),
   ('python','advanced',     'เควสแรก: เขียนฟังก์ชัน + จัดการ error',      'ต่อยอดสำหรับคนเขียนเป็นแล้ว')
 ) as v(slug, level, title, description) on t.slug = v.slug
-on conflict (topic_id, level) do nothing;
+on conflict (topic_id, level, day_number) do nothing;

@@ -81,3 +81,20 @@ export function nextRankFrom(totalXp) {
   const xp = Math.max(0, Number(totalXp) || 0);
   return GRADE_BANDS.find((b) => xp < b.min) ?? null;
 }
+
+/**
+ * แรงค์ปัจจุบันจาก XP สะสม — helper กลางของทุกหน้าจอ
+ * ห้ามอ่าน profiles.grade ที่เก็บใน DB มาโชว์ตรง ๆ: XP จากลิงก์ชวนเพื่อน (redeem-referral) บวก total_xp
+ * โดยไม่แตะคอลัมน์ grade แถบโปรไฟล์จึงเคยโชว์แรงค์เก่าค้างสวนทางกับหน้าเควส
+ * @returns {{ grade: string, min: number, level: number }} band ปัจจุบัน
+ */
+export function gradeFromXp(totalXp) {
+  const xp = Math.max(0, Number(totalXp) || 0);
+  return GRADE_BANDS.reduce((acc, b) => (xp >= b.min ? b : acc), GRADE_BANDS[0]);
+}
+
+/** แรงค์ "จริง" ของเลเวลที่กำหนด — คู่กับตัวเลข Lv. ที่โชว์ข้าง ๆ กัน (Lv.3 ยังเป็น D ไม่ใช่ C) */
+export function gradeForLevel(level) {
+  const lv = Math.max(1, Number(level) || 1);
+  return RANK_LEVELS.reduce((acc, r) => (lv >= r.level ? r.grade : acc), RANK_LEVELS[0].grade);
+}

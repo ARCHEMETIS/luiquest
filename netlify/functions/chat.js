@@ -72,11 +72,18 @@ export default async (req) => {
   }
 
   // ----- เช็คลิมิต 10/วัน (ฟรี) หรือ ~100/วัน (premium) ก่อนเรียก Gemini เสมอ (#03/#13) -----
+  // ★ นับจาก activity_log ไม่ใช่ chat_messages (แก้ P0 จาก audit 4 ส.ค. 2026):
+  //   chat_messages.roadmap_id เป็น on delete cascade → กด "ลบหัวข้อ" ทีเดียว ข้อความแชทของ
+  //   หัวข้อนั้นหายหมด โควตาวันนี้เลยนับใหม่เป็น 0 → วนลบ-สร้างหัวข้อเพื่อแชทไม่จำกัดได้
+  //   ซึ่งอันตรายเป็นพิเศษเพราะโควตา Gemini ฟรีเป็นของ "ทั้งแอพร่วมกัน" (~560 req/วัน)
+  //   คนเดียวก็ทำให้ทุกคนใช้ AI ไม่ได้ทั้งวัน
+  //   activity_log ไม่มี FK ไป roadmaps เลย (มีแค่ user_id) → ลบหัวข้อแล้วประวัติยังอยู่ครบ
+  //   และเขียนแถว 'chat' ครั้งเดียวต่อการตอบสำเร็จ 1 ครั้ง = ความหมายเดียวกับที่นับ role='user' เดิม
   const { count, error: countErr } = await admin
-    .from('chat_messages')
+    .from('activity_log')
     .select('id', { count: 'exact', head: true })
     .eq('user_id', user.id)
-    .eq('role', 'user')
+    .eq('event_type', 'chat')
     .gte('created_at', startOfBangkokDayISO());
   if (countErr) return json(500, { error: countErr.message });
 

@@ -5,6 +5,7 @@ import Onboarding from './pages/Onboarding.jsx';
 import Quest from './pages/Quest.jsx';
 import Coach from './pages/Coach.jsx';
 import Leaderboard from './pages/Leaderboard.jsx';
+import Premium from './pages/Premium.jsx';
 import Profile from './pages/Profile.jsx';
 import Stats from './pages/Stats.jsx';
 import AppShellLayout from './components/AppShellLayout.jsx';
@@ -51,6 +52,16 @@ function AppRoutes() {
         <Route path="/coach" element={<Coach />} />
         <Route path="/leaderboard" element={<Leaderboard />} />
       </Route>
+      {/* หน้าพรีเมียม (จ่ายเงิน) อยู่นอกเชลล์เหมือน /stats — มีปุ่มกลับของตัวเอง และไม่มีแท็บไหนใน bottom nav
+          ที่ควรถูกไฮไลต์ตอนอยู่หน้านี้ เข้าได้ทางเดียวคือปุ่มพรีเมียมในแถบโปรไฟล์ (soft upsell ตามสเปก) */}
+      <Route
+        path="/premium"
+        element={
+          <RequireAuth>
+            <Premium />
+          </RequireAuth>
+        }
+      />
       <Route
         path="/profile"
         element={

@@ -189,13 +189,16 @@ const StatStrip = ({ stats, subs = {}, animate = false }) => {
     </div>
     <div className="dq-anim rounded-2xl border border-[#FBCFE8] bg-white/70 px-2 py-2 text-center" style={tile(2)}>
       <p className="text-[10px] text-[#9D5C7C]">roadmap</p>
-      <p className="font-heading text-[15px] font-bold text-[#831843]">{stats.phasePct}%</p>
-      <div className="mx-auto mt-1 h-1 w-10 overflow-hidden rounded-full bg-[#FBCFE8]/70">
-        <div
-          className="h-full rounded-full bg-gradient-to-r from-violet-500 to-pink-500 transition-[width] duration-700 ease-out"
-          style={{ width: `${stats.phasePct}%` }}
-        />
-      </div>
+      {/* phasePct = null แปลว่า "ยังไม่รู้" (เช่นวันพัก ที่ API ไม่ส่งเลขวันมา) — โชว์ขีดไว้ ไม่ใช่ 0% ที่โกหกว่าไม่คืบหน้า */}
+      <p className="font-heading text-[15px] font-bold text-[#831843]">{stats.phasePct == null ? "–" : `${stats.phasePct}%`}</p>
+      {stats.phasePct != null && (
+        <div className="mx-auto mt-1 h-1 w-10 overflow-hidden rounded-full bg-[#FBCFE8]/70">
+          <div
+            className="h-full rounded-full bg-gradient-to-r from-violet-500 to-pink-500 transition-[width] duration-700 ease-out"
+            style={{ width: `${stats.phasePct}%` }}
+          />
+        </div>
+      )}
     </div>
     {/* อันดับจาก leaderboard — อันดับ 1 ได้สีทอง (ตัวแรงค์ A/B/C ไปอยู่ที่แถบ EXP แทน ไม่โชว์ซ้ำ) */}
     <div className="dq-anim rounded-2xl border border-[#FBCFE8] bg-white/70 px-2 py-2 text-center" style={tile(3)}>
@@ -434,7 +437,8 @@ export default function DailyQuestPage({
           </p>
 
           <div className="mt-4 flex items-center gap-5">
-            <span className={`font-heading text-3xl font-bold opacity-40 ${RANK_COLOR[effectiveRankUp.from] || ""}`}>
+            {/* ดูสีจากตัวอักษรแรกเหมือนแถบแรงค์ปกติ — ถ้าใช้ทั้งสตริง SS/SSS จะหลุดสีทองกลายเป็นไม่มีสี */}
+            <span className={`font-heading text-3xl font-bold opacity-40 ${RANK_COLOR[effectiveRankUp.from?.charAt(0)] || ""}`}>
               {effectiveRankUp.from}
             </span>
             <span className="text-2xl text-[#FBBF24]" style={{ textShadow: "1px 1px 0 #B45309" }}>
@@ -442,7 +446,7 @@ export default function DailyQuestPage({
             </span>
             <span className="relative inline-block">
               <span
-                className={`inline-block font-heading text-7xl font-bold ${RANK_COLOR[effectiveRankUp.to] || ""}`}
+                className={`inline-block font-heading text-7xl font-bold ${RANK_COLOR[effectiveRankUp.to?.charAt(0)] || ""}`}
                 style={{ textShadow: "4px 4px 0 rgba(180,83,9,.35)", animation: "dq-rankup-new .9s ease-out both" }}
               >
                 {effectiveRankUp.to}
@@ -469,9 +473,12 @@ export default function DailyQuestPage({
             เก็บแต้มครบ! แรงค์ขยับจาก <span className="font-bold text-[#8B5CF6]">{effectiveRankUp.from}</span> เป็น{" "}
             <span className="font-bold text-emerald-600">{effectiveRankUp.to}</span> เรียบร้อย
           </p>
-          <p className="mt-1 text-[11px] text-[#9D5C7C]/80">
-            เป้าหมายถัดไป: <span className="font-heading font-bold text-[#FBBF24]" style={{ textShadow: "1px 1px 0 #B45309" }}>{effectiveRankUp.nextGoal}</span>
-          </p>
+          {/* อยู่แรงค์สูงสุด (SSS) แล้วจะไม่มี nextGoal ส่งมา — ซ่อนบรรทัดนี้ไปเลย ดีกว่าโชว์ "เป้าหมายถัดไป: SSS" ที่ถึงแล้ว */}
+          {effectiveRankUp.nextGoal && (
+            <p className="mt-1 text-[11px] text-[#9D5C7C]/80">
+              เป้าหมายถัดไป: <span className="font-heading font-bold text-[#FBBF24]" style={{ textShadow: "1px 1px 0 #B45309" }}>{effectiveRankUp.nextGoal}</span>
+            </p>
+          )}
 
           <button
             onClick={() => setClaimResult((r) => (r ? { ...r, kind: "done" } : { kind: "done", ...MOCK.done }))}
