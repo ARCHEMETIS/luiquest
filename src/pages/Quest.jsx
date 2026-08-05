@@ -290,6 +290,13 @@ export default function Quest() {
     }
   };
 
+  // ★ ต้องเช็คว่า learningSignal กับ quest มีจริงก่อนเทียบ id
+  // เดิมเขียนเป็น learningSignal?.questId === quest?.id ตรง ๆ ใน prop ซึ่งพังตอนยังไม่มีเควส
+  // (กำลังโหลด / วันพัก / เควสยังปั่นไม่เสร็จ): สองฝั่งกลายเป็น undefined เท่ากันพอดี เงื่อนไขผ่าน
+  // แล้วไปอ่าน null.row → ทั้งหน้าดับเป็นจอเปล่า (เจอจริงบน production 5 ส.ค. 2026)
+  const signalForQuest =
+    learningSignal && quest && learningSignal.questId === quest.id ? learningSignal.row : undefined;
+
   return (
     <>
     <DailyQuestPage
@@ -313,7 +320,7 @@ export default function Quest() {
           : { id: null, title: '', desc: '', minutes: activeRoadmap.minutes_per_day, xp: 0, content: null }
       }
       checklistItems={checklist.map((c) => ({ id: c.id, label: c.label, link_url: c.link_url }))}
-      signal={learningSignal?.questId === quest?.id ? learningSignal.row : undefined}
+      signal={signalForQuest}
       onSignal={handleSignal}
       stats={stats}
       onRetry={loadQuest}
