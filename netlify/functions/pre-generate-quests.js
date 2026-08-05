@@ -17,12 +17,11 @@ export const config = {
 // ยังได้ 200 และประมวลผลจริง (ทดสอบแล้วเห็น processed:1) — เอกสารที่บอกว่า scheduled function
 // ไม่มี public URL ใช้ไม่ได้กับ setup นี้ ฟังก์ชันนี้รันด้วย service role + ยิง Gemini ได้
 //
-// ด่านที่ใช้: อนุญาตให้ "ทำงานจริง" เฉพาะในหน้าต่าง cron เท่านั้น (19:00-21:59 UTC = ตี 2-5 ไทย)
-// - cron ของจริงรันในหน้าต่างนี้อยู่แล้ว → ไม่มีทางทำ cron พัง ซึ่งสำคัญกว่าการกันคนนอกแบบเป๊ะ ๆ
-// - นอกหน้าต่าง คนนอกยิงเท่าไหร่ก็ไม่เกิดงาน ไม่แตะ DB ไม่แตะ Gemini
-// - ในหน้าต่าง ถึงยิงได้ก็ทำได้แค่งานที่ cron จะทำอยู่แล้ว (คิว eligibility คำนวณสด เควสที่สร้างแล้ว
-//   ไม่ถูกสร้างซ้ำ) จึงไม่มีทางใช้ปั๊มโควตา Gemini ให้หมดวัน
-// ตั้ง PREGEN_BYPASS_SECRET ใน Netlify env แล้วส่ง header x-pregen-secret มาให้ตรง เพื่อสั่งรันเองนอกเวลา
+// ด่านใหม่: cron ต้องเป็น POST ที่มี next_run ถูกต้องและอยู่ในหน้าต่างเวลา ส่วนการสั่งเองต้องใช้ secret
+// - cron ของจริงส่ง next_run มาเอง จึงยังทำงานได้แม้ไม่ได้ตั้ง PREGEN_BYPASS_SECRET
+// - เวลาอย่างเดียวไม่ใช่การยืนยันตัวตน request อื่นต้องส่ง x-pregen-secret ให้ตรง
+// - request ที่ไม่ใช่ POST หรือไม่ผ่านด่านตอบ 404 เปล่า โดยไม่แตะ DB หรือ Gemini
+// ตั้ง PREGEN_BYPASS_SECRET ใน Netlify env แล้วส่ง header x-pregen-secret มาให้ตรง เพื่อสั่งรันเอง
 const CRON_WINDOW_UTC_HOURS = [19, 20, 21];
 
 function isInsideCronWindow(now = new Date()) {
@@ -31,7 +30,15 @@ function isInsideCronWindow(now = new Date()) {
 
 function hasBypassSecret(req) {
   const expected = typeof Netlify !== 'undefined' ? Netlify.env.get('PREGEN_BYPASS_SECRET') : process.env.PREGEN_BYPASS_SECRET;
-  return Boolean(expected) && req.headers.get('x-pregen-secret') === expected;
+  if (!expected) {
+    console.error('[pre-generate-quests] ไม่ได้ตั้ง PREGEN_BYPASS_SECRET');
+    return false;
+  }
+  return req.headers.get('x-pregen-secret') === expected;
+}
+
+function hasValidNextRun(nextRun) {
+  return typeof nextRun === 'string' && nextRun.trim() !== '' && Number.isFinite(Date.parse(nextRun));
 }
 
 export function orderEligibleRoadmaps(roadmaps) {
@@ -45,12 +52,10 @@ export function orderEligibleRoadmaps(roadmaps) {
 }
 
 export default async (req) => {
-  // นอกหน้าต่าง cron = ไม่ทำอะไรเลย (ดูเหตุผลด้านบน) — ตอบสั้น ๆ ไม่บอกสถานะภายในของระบบ
-  if (!isInsideCronWindow() && !hasBypassSecret(req)) {
-    console.warn('[pre-generate-quests] ถูกเรียกนอกหน้าต่าง cron — ไม่ทำงาน');
-    return new Response(JSON.stringify({ ok: true, skipped: 'outside-window' }), {
-      headers: { 'Content-Type': 'application/json' },
-    });
+  // รับเฉพาะ POST เพื่อไม่ให้ URL ธรรมดาเรียกงานได้
+  if (req.method !== 'POST') {
+    console.warn(`[pre-generate-quests] ปฏิเสธ method ${req.method}`);
+    return new Response(null, { status: 404 });
   }
 
   let nextRun = null;
@@ -58,9 +63,15 @@ export default async (req) => {
     const body = await req.json();
     nextRun = body?.next_run ?? null;
   } catch {
-    // scheduled invoke บางครั้งไม่มี body ที่ parse ได้ (เช่น ทดสอบด้วย functions:invoke) — ไม่ใช่ error จริง
+    // body ที่อ่านไม่ได้ไม่ถือเป็น scheduled call และต้องผ่าน secret แทน
   }
   if (nextRun) console.log(`[pre-generate-quests] next_run: ${nextRun}`);
+
+  const isScheduledCall = isInsideCronWindow() && hasValidNextRun(nextRun);
+  if (!isScheduledCall && !hasBypassSecret(req)) {
+    console.warn('[pre-generate-quests] ถูกเรียกโดยไม่ผ่านด่าน — ไม่ทำงาน');
+    return new Response(null, { status: 404 });
+  }
 
   const admin = getAdminClient();
 
@@ -129,8 +140,8 @@ export default async (req) => {
 
   console.log('[pre-generate-quests]', JSON.stringify(summary));
 
-  // ตอบกลับแบบสรุปตัวเลขล้วน — ไม่คืน roadmap_ids_processed ออกไปข้างนอก (endpoint นี้สาธารณะ
-  // ในหน้าต่าง cron จึงไม่ควรบอก id ของผู้ใช้; รายละเอียดเต็มอยู่ใน log ฝั่ง Netlify แล้ว)
+  // ตอบกลับแบบสรุปตัวเลขล้วน — ไม่คืน roadmap_ids_processed ออกไปข้างนอก (URL endpoint นี้ยังเข้าถึงได้จากภายนอก
+  // จึงไม่ควรบอก id ของผู้ใช้; รายละเอียดเต็มอยู่ใน log ฝั่ง Netlify แล้ว)
   const { roadmap_ids_processed: _ids, ...publicSummary } = summary;
   return new Response(JSON.stringify(publicSummary), {
     headers: { 'Content-Type': 'application/json' },
