@@ -23,6 +23,11 @@ as $$
   select coalesce((select is_admin from public.profiles where id = auth.uid()), false);
 $$;
 
+-- ⚠️ ของจริงบน production = ไฟล์นี้ + migrations ทั้งหมดใน supabase/migrations/ (เรียงตามวันที่)
+--    migration 2026-08-05-audit-fixes.sql "เขียนทับ" object เหล่านี้ และยังไม่ได้มิเรอร์กลับมาในไฟล์นี้:
+--      complete_quest, redeem_referral, public_stats, leaderboard
+--      + เพิ่มใหม่: is_premium_active, reserve_chat_quota, referrer_reward_cap
+--    ติดตั้งใหม่จากศูนย์ต้องรัน schema.sql แล้วตามด้วย migrations ทุกไฟล์เสมอ ห้ามรันแค่ไฟล์นี้
 create table public.profiles (
   id                  uuid primary key references auth.users(id) on delete cascade,
   display_name        text,                       -- ดึงจาก Google
@@ -33,8 +38,12 @@ create table public.profiles (
   last_quest_date     date,                        -- ใช้คำนวณ streak (ต่อเนื่อง/ขาด)
   last_active_at      timestamptz,                 -- อัปเดตทุกครั้งเปิดแอพ → ใช้ทำ DAU สำรอง (#14)
   grade               text,                        -- letter grade A/B/C... (คำนวณจาก progress)
+  -- ★ ห้ามเช็ค is_premium เดี่ยว ๆ — ไม่มีอะไรในระบบเซ็ตกลับเป็น false ต้องคู่กับ premium_until เสมอ
+  --   (จ่ายครั้งเดียวได้สิทธิ์ตลอดชีพ — P0 จาก audit 5 ส.ค. 2026) ใช้ public.is_premium_active() ใน SQL
+  --   หรือ isPremiumActive() ฝั่ง JS (create-payment.js / _shared/questGenerator.js)
   is_premium          boolean not null default false,   -- flag หลักที่ทุก gating เช็ค (#13)
   premium_until       timestamptz,                 -- วันหมดสิทธิ (now + 1 เดือน ต่อรอบจ่าย) — auto-expire runway สั้น (#13)
+  last_streak_freeze_date date,                    -- streak freeze ทำงานล่าสุดวันไหน (พรีเมียม: ขาดได้ 1 วัน/7 วัน)
   referral_code       text unique not null,        -- โค้ดของ user เองไว้ให้คนอื่นสมัครผ่าน
   referred_by         uuid references public.profiles(id) on delete set null,  -- สมัครผ่านใคร
   leaderboard_opt_out boolean not null default false,  -- privacy: ซ่อนจาก leaderboard (#14 flag 4)
@@ -924,13 +933,11 @@ create policy "payments_update_admin" on public.payments
 create policy "activity_select_own_or_admin" on public.activity_log
   for select to authenticated using (auth.uid() = user_id or public.is_admin());
 
+-- ฟีเจอร์เพื่อนยังไม่ได้ทำ frontend ไม่แตะตารางนี้เลย — เปิดแค่ select เหมือน push_subscriptions
+-- policy insert/update เดิมถูกถอดออก 5 ส.ค. 2026: insert ไม่บังคับ status='pending' และ update
+-- แก้ได้ทุกคอลัมน์ → สร้างสถานะ "เป็นเพื่อนกันแล้ว" กับใครก็ได้เอง เอากลับมาเมื่อสร้างฟีเจอร์จริง
 create policy "friend_select_involved" on public.friendships
   for select to authenticated
-  using (auth.uid() = requester_id or auth.uid() = addressee_id);
-create policy "friend_insert_own" on public.friendships
-  for insert to authenticated with check (auth.uid() = requester_id);
-create policy "friend_update_involved" on public.friendships
-  for update to authenticated
   using (auth.uid() = requester_id or auth.uid() = addressee_id);
 
 -- web push เป็นงาน Wave 2 ที่ยังไม่ได้ทำ frontend ไม่แตะตารางนี้เลยสักบรรทัด
