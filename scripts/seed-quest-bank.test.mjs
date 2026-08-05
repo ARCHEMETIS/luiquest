@@ -23,6 +23,16 @@ test('rejects a checklist with five items', () => {
   assert.throws(() => validateQuestBank([quest]), /checklist must contain 2 to 4 items/);
 });
 
+test('accepts day 14 and rejects day 15 (คลังขยายถึงสัปดาห์ที่ 2)', () => {
+  const ok = structuredClone(validQuest);
+  ok.dayNumber = 14;
+  assert.equal(validateQuestBank([ok]), true);
+
+  const tooFar = structuredClone(validQuest);
+  tooFar.dayNumber = 15;
+  assert.throws(() => validateQuestBank([tooFar]), /dayNumber must be an integer from 2 to 14/);
+});
+
 test('rejects a link absent from the vetted source list', () => {
   const quest = structuredClone(validQuest);
   quest.checklist[0].link_url = 'https://example.com/unvetted';

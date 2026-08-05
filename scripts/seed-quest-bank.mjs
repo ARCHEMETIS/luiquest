@@ -7,17 +7,29 @@ import { createClient } from '@supabase/supabase-js';
 import { QUEST_BANK_beginner } from './quest-bank-beginner.mjs';
 import { QUEST_BANK_intermediate } from './quest-bank-intermediate.mjs';
 import { QUEST_BANK_advanced } from './quest-bank-advanced.mjs';
+// สัปดาห์ที่ 2 (วันที่ 8-14) — แยกไฟล์ไว้ ไม่รวมกับของเดิมเพื่อให้ diff อ่านง่ายและย้อนได้ทีละสัปดาห์
+import { QUEST_BANK_beginner_w2 } from './quest-bank-beginner-days8-14.mjs';
+import { QUEST_BANK_intermediate_w2 } from './quest-bank-intermediate-days8-14.mjs';
+import { QUEST_BANK_advanced_w2 } from './quest-bank-advanced-days8-14.mjs';
 
 const QUEST_BANK = [
   ...QUEST_BANK_beginner,
   ...QUEST_BANK_intermediate,
   ...QUEST_BANK_advanced,
+  ...QUEST_BANK_beginner_w2,
+  ...QUEST_BANK_intermediate_w2,
+  ...QUEST_BANK_advanced_w2,
 ];
 
 const KNOWN_TOPIC_SLUGS = new Set(['python', 'data-ml', 'web', 'ai-tools', 'excel', 'finance']);
 const VALID_LEVELS = new Set(['beginner', 'intermediate', 'advanced']);
 const SOURCE_LIST_PATH = new URL('../.scratch/app-v2-spec/assets/thai-lesson-sources.md', import.meta.url);
 const XP_REWARD = 10;
+// วันที่ 1 มาจาก seed-starter-quests.mjs — คลังนี้รับตั้งแต่วันที่ 2 เป็นต้นไป
+// ขยายเพดานจาก 7 เป็น 14 เมื่อ 5 ส.ค. 2026: เดิมเนื้อหาหมดตั้งแต่วันที่ 8 แล้วตกไปให้ Gemini แต่งสด
+// ทุกวัน (เปลืองโควตาฟรีที่ทั้งแอพใช้ร่วมกัน + เสียเส้นการสอนที่วางมือไว้)
+const MIN_DAY = 2;
+const MAX_DAY = 14;
 
 function rowError(index, message) {
   return new Error(`quest-bank row ${index + 1}: ${message}`);
@@ -34,8 +46,8 @@ export function validateQuestBank(quests, sourceText = readFileSync(SOURCE_LIST_
     if (!VALID_LEVELS.has(quest.level)) {
       throw rowError(index, `invalid level "${quest.level}"`);
     }
-    if (!Number.isInteger(quest.dayNumber) || quest.dayNumber < 2 || quest.dayNumber > 7) {
-      throw rowError(index, `dayNumber must be an integer from 2 to 7, got ${quest.dayNumber}`);
+    if (!Number.isInteger(quest.dayNumber) || quest.dayNumber < MIN_DAY || quest.dayNumber > MAX_DAY) {
+      throw rowError(index, `dayNumber must be an integer from ${MIN_DAY} to ${MAX_DAY}, got ${quest.dayNumber}`);
     }
     if (typeof quest.title !== 'string' || !quest.title.trim()) throw rowError(index, 'title is required');
     if (typeof quest.description !== 'string' || !quest.description.trim()) {
