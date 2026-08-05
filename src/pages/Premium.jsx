@@ -30,18 +30,28 @@ const PRICE_BAHT = 39;
 const MAX_SLIP_BYTES = 5 * 1024 * 1024;
 
 // จุดขายที่เจ้าของเลือก — ❄️ freeze streak เป็นพระเอก (อยู่บนสุด ตัวใหญ่สุด)
+// ทุกบรรทัดต้องเป็นของที่มีจริงในระบบเท่านั้น (ห้ามขายของที่ยังไม่ได้ทำ)
 const PERKS = [
   {
     icon: "❄️",
     title: "Freeze streak",
-    desc: "วันไหนไม่ไหวจริง ๆ streak ไม่ขาด — เก็บไฟที่ต่อมาเป็นสิบวันไว้ได้",
+    desc: "พลาดไป 1 วัน streak ไม่ขาด — ระบบยกให้วันนึง เก็บไฟที่ต่อมาเป็นสิบวันไว้ได้ (ถ้าหายไปติดกันหลายวัน streak ยังรีเซ็ตตามปกตินะ)",
     hero: true,
   },
-  { icon: "🎨", title: "สกิน & ธีมมาสคอต", desc: "แต่งตัวเจ้าผีประจำตัวให้ไม่เหมือนใคร" },
-  { icon: "✨", title: "ป้ายพรีเมียม", desc: "ขึ้นข้างชื่อบนกระดานอันดับและการ์ดแชร์" },
-  { icon: "💬", title: "แชทโค้ชแบบจุใจ", desc: "ถามได้เยอะกว่าเดิมหลายเท่า ไม่ต้องรอรีเซ็ตเที่ยงคืน" },
-  { icon: "⚡", title: "เควสมากกว่าวันละอัน", desc: "วันไหนไฟแรงก็ลุยรวดเดียวหลายเควสได้เลย" },
+  { icon: "✨", title: "ป้ายพรีเมียม", desc: "ขึ้นข้างชื่อคุณบนกระดานอันดับ" },
+  { icon: "💬", title: "แชทโค้ชแบบจุใจ", desc: "ถามโค้ชได้วันละ 100 ข้อความ (แผนฟรีวันละ 10)" },
+  { icon: "⚡", title: "เควสมากกว่าวันละอัน", desc: "วันไหนไฟแรงก็ลุยได้ถึงวันละ 3 เควส (แผนฟรีวันละ 1)" },
 ];
+
+// พรีเมียมนับว่า "ยังใช้อยู่" ต่อเมื่อธงเปิด และยังไม่ถึง premium_until — mirror isPremiumActive
+// ใน netlify/functions/create-payment.js เป๊ะ ๆ (premium_until ว่าง = ไม่ active)
+// ไม่มีอะไรในระบบตั้ง is_premium กลับเป็น false ให้เลย ดูแต่ธงอย่างเดียวคนหมดอายุจะค้างสถานะพรีเมียมถาวร
+// และกดต่ออายุไม่ได้ ทั้งที่ backend พร้อมรับเงินรอบใหม่อยู่แล้ว
+export function isPremiumActive(profile, now = new Date()) {
+  if (!profile?.is_premium || !profile.premium_until) return false;
+  const premiumUntil = new Date(profile.premium_until);
+  return Number.isFinite(premiumUntil.getTime()) && premiumUntil > new Date(now);
+}
 
 const CARD = "rounded-2xl border border-[#FBCFE8] bg-white/80 px-4 py-3.5";
 const PRIMARY_BTN =
@@ -196,7 +206,8 @@ export default function Premium() {
   }, [payment?.promptpay_id, payment?.amount]);
 
   const amountLabel = `${Number(payment?.amount) || PRICE_BAHT} บาท`;
-  const isPremium = !!profile?.is_premium;
+  const isPremium = isPremiumActive(profile);
+  const premiumExpired = !!profile?.is_premium && !isPremium; // เคยจ่ายแล้วแต่หมดอายุ — ต้องต่ออายุได้ ไม่ใช่โดนบล็อก
 
   return (
     <div
@@ -241,7 +252,7 @@ export default function Premium() {
             <GhostMascot mood="fireworks" className="mb-3 scale-90" />
             <h1 className="font-heading text-lg font-bold">คุณเป็นพรีเมียมอยู่แล้ว ✨</h1>
             <p className="mt-1.5 text-xs leading-relaxed text-[#9D5C7C]">
-              ขอบคุณที่สนับสนุนลุยเควสนะ! freeze streak, สกินมาสคอต, ป้ายพรีเมียม และแชทโค้ชแบบจุใจ เปิดให้ใช้ครบแล้ว
+              ขอบคุณที่สนับสนุนลุยเควสนะ! freeze streak, ป้ายพรีเมียม, เควสวันละ 3 และแชทโค้ชวันละ 100 ข้อความ เปิดให้ใช้ครบแล้ว
             </p>
             <button type="button" onClick={() => navigate("/quest")} className={`${PRIMARY_BTN} mt-5 max-w-[260px]`}>
               กลับไปลุยเควส 🚀
@@ -316,6 +327,16 @@ export default function Premium() {
                   <p className="mt-1 text-[11px] text-[#9D5C7C]">จ่ายผ่านพร้อมเพย์ ยกเลิกเมื่อไหร่ก็แค่ไม่ต้องต่ออายุ</p>
                 </div>
 
+                {/* เคยเป็นพรีเมียมแล้วหมดอายุ — ทักแบบขอบคุณ ไม่ใช่ทวงเงิน แล้วเปิดทางต่ออายุให้เลย */}
+                {premiumExpired && (
+                  <div className="pm-anim rounded-2xl border border-[#8B5CF6]/30 bg-gradient-to-br from-violet-50 to-pink-50 px-3.5 py-2.5 text-[11px] leading-relaxed text-[#831843]" style={{ animation: "pm-in .3s ease-out" }}>
+                    <span className="font-bold">พรีเมียมของคุณหมดอายุแล้วนะ 💜</span>
+                    <br />
+                    ขอบคุณที่สนับสนุนกันมาตลอดเลย! ต่ออายุอีกเดือนได้เลย ของทุกอย่างกลับมาครบทันทีที่ตรวจสลิปผ่าน —
+                    ระหว่างนี้ใช้ฟรีต่อได้ตามปกติ ไม่มีอะไรหาย
+                  </div>
+                )}
+
                 {rejected && (
                   <div className="pm-anim rounded-2xl border border-amber-200 bg-amber-50 px-3.5 py-2.5 text-[11px] leading-relaxed text-amber-800" style={{ animation: "pm-in .3s ease-out" }}>
                     <span className="font-bold">รอบที่แล้วสลิปยังไม่ผ่าน 🥲</span>
@@ -340,7 +361,7 @@ export default function Premium() {
 
                 <div className="pm-anim mt-1 flex flex-col gap-2" style={pop(8)}>
                   <button type="button" onClick={startPayment} disabled={creating} className={PRIMARY_BTN}>
-                    {creating ? "กำลังเตรียมให้..." : `สมัครพรีเมียม ${PRICE_BAHT} บาท`}
+                    {creating ? "กำลังเตรียมให้..." : `${premiumExpired ? "ต่ออายุพรีเมียม" : "สมัครพรีเมียม"} ${PRICE_BAHT} บาท`}
                   </button>
                   <button type="button" onClick={goBack} className={GHOST_BTN}>
                     ไว้ก่อน ใช้ฟรีต่อ

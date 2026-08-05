@@ -5,6 +5,7 @@ import { useAuth } from '../hooks/useAuth.jsx';
 import { useProfile } from '../hooks/useProfile.jsx';
 import { api } from '../lib/api.js';
 import { supabase } from '../lib/supabaseClient.js';
+import { isPremiumActive } from './Premium.jsx';
 
 const FREE_QUOTA_TOTAL = 10;
 const PREMIUM_QUOTA_TOTAL = 100;
@@ -80,7 +81,9 @@ export default function Coach() {
       );
       setReady(true);
     })();
-  }, [token, roadmapId, user]);
+    // ผูกกับ user?.id ไม่ใช่ object user — AuthProvider setSession ใหม่ทุกครั้งที่ token refresh (ทุกชั่วโมง/กลับมาโฟกัสแท็บ)
+    // identity ของ object เปลี่ยนทุกรอบ effect ก็ยิง questToday ใหม่ ซึ่งอาจไปกระตุ้นให้ Gemini generate เควสฟรี ๆ
+  }, [token, roadmapId, user?.id]);
 
   const handleSend = async (text) => {
     try {
@@ -108,12 +111,16 @@ export default function Coach() {
   }
   if (profileLoading || !activeRoadmap || !ready) return null;
 
+  // โควตาจริงตัดสินใน RPC reserve_chat_quota ที่เช็ค premium_until ด้วย — ฝั่งจอต้องคิดแบบเดียวกัน
+  // ไม่งั้นคนที่พรีเมียมหมดอายุจะเห็นเลข 100 แต่ยิงได้จริงแค่ 10
+  const quotaTotal = isPremiumActive(profile) ? PREMIUM_QUOTA_TOTAL : FREE_QUOTA_TOTAL;
+
   return (
     <CoachChatPage
       topicTitle={activeRoadmap.topic_title}
       initialMessages={initialMessages}
       initialQuotaUsed={initialQuotaUsed}
-      quotaTotal={profile?.is_premium ? PREMIUM_QUOTA_TOTAL : FREE_QUOTA_TOTAL}
+      quotaTotal={quotaTotal}
       onSend={handleSend}
       onBack={() => navigate('/quest')}
       onGoToQuest={() => navigate('/quest')}

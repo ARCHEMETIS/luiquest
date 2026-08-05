@@ -12,6 +12,7 @@ import { useProfile } from "../hooks/useProfile.jsx";
 import { api } from "../lib/api.js";
 import { gradeFromXp } from "../lib/gradeBands.js";
 import { supabase } from "../lib/supabaseClient.js";
+import { isPremiumActive } from "../pages/Premium.jsx";
 
 // level enum จริงจาก backend = beginner/intermediate/advanced (ต่างจาก id การ์ด onboarding some/solid)
 const LEVEL_LABEL = { beginner: "มือใหม่ 🌱", intermediate: "พอมีพื้น 🌿", advanced: "แน่นแล้ว 🌳" };
@@ -208,7 +209,8 @@ export default function ProfileDrawer({ open, onClose, showStateToggle = false }
 
   // สร้างข้อมูลรูปเดียวกับ preset เดิมจากของจริง (ลด diff ฝั่ง render) — topics.id = roadmap_id ตัวจริงไว้สลับ
   const preset = {
-    plan: profile?.is_premium ? "premium" : "free",
+    // ต้องเช็ควันหมดอายุด้วย ไม่ใช่ดูแค่ธง — ไม่งั้นคนที่พรีเมียมหมดอายุจะไม่เห็นปุ่ม "อัปเกรดพรีเมียม" เลย ต่ออายุไม่ได้
+    plan: isPremiumActive(profile) ? "premium" : "free",
     user: { name, initial },
     // แรงค์คิดสดจาก total_xp ด้วย helper กลาง (gradeBands) เหมือนหน้าเควส — ห้ามใช้ profile.grade ที่เก็บใน DB
     // เพราะ XP จากลิงก์ชวนเพื่อนบวก total_xp โดยไม่อัพเดต grade แถบนี้เลยเคยโชว์แรงค์ค้างสวนทางกับหน้าเควส

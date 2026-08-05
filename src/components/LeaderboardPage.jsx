@@ -86,6 +86,18 @@ const MeBadge = () => (
   <span className="shrink-0 rounded-full bg-[#8B5CF6] px-1.5 py-0.5 text-[9px] font-bold leading-none text-white">คุณ</span>
 );
 
+// ป้ายพรีเมียม — ทรงเดียวกับ badge "คุณ" แต่ไล่สีม่วง→ชมพูให้ตรงกับป้ายพรีเมียมในแถบโปรไฟล์
+// เอาแค่ประกายอันเดียว ไม่ใส่คำว่า "พรีเมียม" เพราะนี่คือเครื่องหมายสถานะ ไม่ใช่ป้ายโฆษณา
+const PremiumBadge = () => (
+  <span
+    aria-label="สมาชิกพรีเมียม"
+    title="สมาชิกพรีเมียม"
+    className="shrink-0 rounded-full bg-gradient-to-r from-violet-500 to-pink-500 px-1.5 py-0.5 text-[9px] font-bold leading-none text-white"
+  >
+    ✦
+  </span>
+);
+
 // avatar header ของตัวเอง — โทนเข้ม+ตัวหนังสือขาว ให้ตรงกับ avatar หัวจอของหน้าเควส (ไม่ใช่โทนพาสเทลแบบ Avatar ในลิสต์)
 const HeaderAvatar = ({ name, className = "h-10 w-10 text-sm" }) => (
   <span
@@ -190,6 +202,7 @@ const PodiumCard = ({ entry, rank, meRef, flash }) => {
         <span className="mt-1.5 flex w-full items-center justify-center gap-1">
           {entry.me && <MeBadge />}
           <span className="truncate text-[11px] font-bold text-[#831843]">{entry.name}</span>
+          {entry.premium && <PremiumBadge />}
         </span>
         <XPCount value={entry.xp} delay={rank * 90 + 150} className="text-[10px] text-[#9D5C7C]" />
       </div>
@@ -219,6 +232,7 @@ const BoardRow = ({ entry, rank, meRef, index, flash }) => (
     <Avatar name={entry.name} />
     <span className="flex min-w-0 flex-1 items-center gap-1.5">
       <span className="truncate text-[13px] font-bold text-[#831843]">{entry.name}</span>
+      {entry.premium && <PremiumBadge />}
       {entry.me && <MeBadge />}
     </span>
     <XPCount
@@ -256,7 +270,7 @@ export default function LeaderboardPage({ rows, loading = false, error = null, c
   const jumpTimers = useRef({});
 
   // ต่อ view `leaderboard` จริงแล้ว — map แต่ละแถวเป็น { name, xp, me } (rank = ลำดับใน array), highlight แถวตัวเองจาก currentUserId
-  const board = (rows ?? []).map((r) => ({ id: r.user_id, name: r.display_name || "ผู้ใช้ลุยเควส", xp: r.total_xp, rank: Number(r.rank), me: r.user_id === currentUserId }));
+  const board = (rows ?? []).map((r) => ({ id: r.user_id, name: r.display_name || "ผู้ใช้ลุยเควส", xp: r.total_xp, rank: Number(r.rank), me: r.user_id === currentUserId, premium: !!r.is_premium }));
   const isLoading = loading || (!rows && !error);
   // คนน้อย → โหมด "few" (เก้าอี้ว่าง + ชวนเพื่อน ไม่โล่งเหงา), คนเยอะ → "ready" (การ์ด pin หาแถวตัวเอง)
   const ui = isLoading ? "loading" : board.length < 10 ? "few" : "ready";
