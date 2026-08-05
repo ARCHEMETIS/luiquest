@@ -79,27 +79,23 @@ export default async (req) => {
   //   คนเดียวก็ทำให้ทุกคนใช้ AI ไม่ได้ทั้งวัน
   //   activity_log ไม่มี FK ไป roadmaps เลย (มีแค่ user_id) → ลบหัวข้อแล้วประวัติยังอยู่ครบ
   //   และเขียนแถว 'chat' ครั้งเดียวต่อการตอบสำเร็จ 1 ครั้ง = ความหมายเดียวกับที่นับ role='user' เดิม
-  const { count, error: countErr } = await admin
-    .from('activity_log')
-    .select('id', { count: 'exact', head: true })
-    .eq('user_id', user.id)
-    .eq('event_type', 'chat')
-    .gte('created_at', startOfBangkokDayISO());
-  if (countErr) return json(500, { error: countErr.message });
+  // ★ จองโควตาใต้ล็อกแถว profile ก่อนเรียก Gemini (RPC reserve_chat_quota — migration 5 ส.ค. 2026)
+  //   เดิมเป็น นับ → เรียก Gemini → ค่อยจด: ยิงขนาน 100 requests อ่านเห็น count=0 ทุกตัวแล้วเข้า
+  //   เรียก Gemini หมดทั้งที่ลิมิตคือ 10 — โควตาฟรี ~560 req/วันเป็นของทั้งแอพร่วมกัน คนเดียว
+  //   ดูดหมดได้ทั้งวัน (P0 จาก audit 5 ส.ค.) RPC เช็ควันหมดอายุพรีเมียมให้ด้วยในตัว
+  //   หมายเหตุ: จองแล้วไม่คืนแม้ Gemini พัง — ถ้าคืนให้ คนยิงรัวจะได้ยิงฟรีไม่จำกัด
+  const { data: quota, error: quotaErr } = await admin.rpc('reserve_chat_quota', {
+    p_user_id: user.id,
+    p_day_start: startOfBangkokDayISO(),
+    p_free_limit: FREE_DAILY_LIMIT,
+    p_premium_limit: PREMIUM_DAILY_LIMIT,
+  });
+  if (quotaErr) return json(500, { error: quotaErr.message });
 
-  const { data: profile, error: profileErr } = await admin
-    .from('profiles')
-    .select('is_premium')
-    .eq('id', user.id)
-    .single();
-  if (profileErr) return json(500, { error: profileErr.message });
-
-  const limit = profile.is_premium ? PREMIUM_DAILY_LIMIT : FREE_DAILY_LIMIT;
-  const usedToday = count ?? 0;
-
-  if (usedToday >= limit) {
+  if (!quota?.allowed) {
     return json(200, { limited: true, remaining: 0, resetAt: nextBangkokMidnightISO() });
   }
+  const remaining = quota.remaining ?? 0;
 
   const cooldownUntil = degradedCooldownByUser.get(user.id) ?? 0;
   if (cooldownUntil > Date.now()) {
@@ -154,11 +150,6 @@ export default async (req) => {
   });
   if (insertAssistantErr) return json(500, { error: insertAssistantErr.message });
 
-  await admin.from('activity_log').insert({
-    user_id: user.id,
-    event_type: 'chat',
-    metadata: { quest_id: questId },
-  });
-
-  return json(200, { reply, remaining: Math.max(0, limit - usedToday - 1) });
+  // โควตาถูกจดไปแล้วตอนจอง (reserve_chat_quota) — ห้ามจดซ้ำตรงนี้ ไม่งั้นนับเป็น 2 ครั้งต่อข้อความ
+  return json(200, { reply, remaining });
 };

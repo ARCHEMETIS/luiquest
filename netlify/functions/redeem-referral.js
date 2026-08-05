@@ -64,7 +64,7 @@ export default async (req) => {
   // insert referrals + จ่าย XP ทั้งคู่ + activity_log ทำใน transaction เดียวของ Postgres (RPC)
   // กัน lost-update ถ้า referrer โดนแก้ total_xp พร้อมกันจากที่อื่น (เช่น complete-quest.js)
   // และกันสถานะค้างครึ่ง ๆ กลาง ๆ ถ้าขั้นใดขั้นหนึ่งพังกลางทาง
-  const { data: referredTotalXp, error: redeemErr } = await admin.rpc('redeem_referral', {
+  const { data: result, error: redeemErr } = await admin.rpc('redeem_referral', {
     p_referrer_id: referrer.id,
     p_referred_id: user.id,
     p_bonus: REFERRAL_XP_BONUS,
@@ -74,12 +74,18 @@ export default async (req) => {
     if (redeemErr.code === '23505') {
       return json(409, { error: 'บัญชีนี้ถูกชวนไปแล้ว ใช้ลิงก์ชวนซ้ำไม่ได้' });
     }
+    // ชวนไขว้กันไปมา / ชวนตัวเอง — RPC โยน check_violation กลับมา (migration 5 ส.ค. 2026)
+    if (redeemErr.code === '23514') {
+      return json(400, { error: 'ลิงก์ชวนนี้ใช้ไม่ได้ — ชวนกันไปมาหรือชวนตัวเองไม่ได้' });
+    }
     return json(500, { error: redeemErr.message });
   }
 
+  // ★ ผู้ชวนได้ XP สูงสุดตามเพดานจำนวนคนที่ RPC กำหนด (กันสมัครบัญชีทิ้งมาปั๊มให้ตัวเอง)
+  //   เกินเพดานแล้วยังบันทึก referral ให้ครบ แต่ referrer_xp_awarded จะเป็น 0 — ต้องรายงานตามจริง
   return json(200, {
-    referrer_xp_awarded: REFERRAL_XP_BONUS,
-    referred_xp_awarded: REFERRAL_XP_BONUS,
-    total_xp: referredTotalXp,
+    referrer_xp_awarded: result?.referrer_xp_awarded ?? 0,
+    referred_xp_awarded: result?.referred_xp_awarded ?? REFERRAL_XP_BONUS,
+    total_xp: result?.referred_total_xp ?? null,
   });
 };

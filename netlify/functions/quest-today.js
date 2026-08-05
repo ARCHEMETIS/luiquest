@@ -7,6 +7,28 @@ import { requireUser, unauthorized, json } from './_shared/auth.js';
 import { getAdminClient } from './_shared/supabaseAdmin.js';
 import { generateNextQuest } from './_shared/questGenerator.js';
 import { learningDayStr } from './_shared/datetime.js';
+import { isPremiumActive } from './_shared/questGenerator.js';
+
+const FREE_DAILY_QUESTS = 1;
+const PREMIUM_DAILY_QUESTS = 3; // ต้องตรงกับ p_premium_allowance ของ RPC complete_quest
+
+// เหลือสิทธิ์ทำเควสที่ได้ XP อีกกี่เควสในวันเรียนนี้ (0 = ครบโควตาแล้ว)
+async function xpQuotaRemaining(admin, userId, learningDay) {
+  const { data: profile } = await admin
+    .from('profiles')
+    .select('is_premium, premium_until')
+    .eq('id', userId)
+    .maybeSingle();
+  const limit = isPremiumActive(profile) ? PREMIUM_DAILY_QUESTS : FREE_DAILY_QUESTS;
+
+  const { count } = await admin
+    .from('xp_awards')
+    .select('id', { count: 'exact', head: true })
+    .eq('user_id', userId)
+    .eq('award_date', learningDay);
+
+  return Math.max(0, limit - (count ?? 0));
+}
 
 export default async (req) => {
   if (req.method !== 'GET') return json(405, { error: 'Method Not Allowed' });
@@ -64,9 +86,13 @@ export default async (req) => {
     const doneToday =
       latestDone?.completed_at && learningDayStr(new Date(latestDone.completed_at)) === currentLearningDay;
 
-    // จบเควสวันนี้ไปแล้ว = เจตนา 1 เควส/วัน ไม่ generate ล่วงหน้าให้ binge — cron รายคืนเตรียมของพรุ่งนี้เอง
+    // จบเควสของวันนี้ไปแล้ว — แต่พรีเมียมซื้อสิทธิ์ "มากกว่า 1 เควส/วัน" ไว้ จึงต้องเช็คโควตาจริง
+    // ก่อนตัดจบ (ก่อนหน้านี้ตัดจบที่ 1 เควสสำหรับทุกคน ทั้งที่หน้าขายโฆษณา 3 เควส/วัน — audit 5 ส.ค.)
+    // นับจาก xp_awards ซึ่งเป็นแหล่งเดียวกับที่ complete_quest ใช้ตัดสินเพดาน จึงไม่มีทางคิดคนละทาง
+    const quotaLeft = doneToday ? await xpQuotaRemaining(admin, user.id, currentLearningDay) : 0;
+
     // แยก status 'done_today' ออกจาก 'not_ready' ให้ frontend โชว์ "จบวันนี้แล้ว พักได้" (บวก) ไม่ใช่ "ปั่นไม่ทัน ลองใหม่" (error)
-    if (doneToday) {
+    if (doneToday && quotaLeft <= 0) {
       return json(200, {
         status: 'done_today',
         roadmap,

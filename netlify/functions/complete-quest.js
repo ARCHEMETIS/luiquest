@@ -2,7 +2,10 @@
 // body: { quest_id, checked_item_ids: [uuid, ...] }
 import { requireUser, unauthorized, json } from './_shared/auth.js';
 import { getAdminClient } from './_shared/supabaseAdmin.js';
-import { bangkokDateStr, startOfBangkokDayISO } from './_shared/datetime.js';
+// ★ ใช้ learningDayStr (วันเรียน ตัดตี 5) ไม่ใช่ bangkokDateStr (ตัดเที่ยงคืน) — ต้องเป็นวันเดียวกับ
+//   ที่ quest-today.js ใช้เลือกเควส ไม่งั้นเควสที่ทำตอนตี 1-5 จะกินโควตาของวันใหม่ แล้วพอถึงตี 5
+//   ได้เควสจริงมาทำกลับได้ 0 XP (P1 จาก audit 5 ส.ค.)
+import { learningDayStr, startOfBangkokDayISO } from './_shared/datetime.js';
 // GRADE_BANDS ส่งเข้า RPC complete_quest — single source of truth เดิม (streak/grade คำนวณใน SQL แล้ว)
 import { GRADE_BANDS } from '../../src/lib/gradeBands.js';
 import { topicKeyOf } from './_shared/topicKey.js';
@@ -79,7 +82,7 @@ export default async (req) => {
     p_roadmap_id: quest.roadmap_id,
     p_xp: quest.xp_reward,
     p_checked_items: [...checkedIds],
-    p_today: bangkokDateStr(),
+    p_today: learningDayStr(),
     p_grade_bands: GRADE_BANDS,
     p_metadata: { quest_id: questId, roadmap_id: quest.roadmap_id, xp_earned: quest.xp_reward, day_start: startOfBangkokDayISO(), topic_key: topicKey },
     // ledger กันปั๊ม XP: นับจาก (user, หัวข้อ, วันไทย) ที่ไม่โดน cascade ตอนลบ roadmap
@@ -93,10 +96,14 @@ export default async (req) => {
     // (เกิดได้ 2 ทาง: ลบหัวข้อแล้วสร้างใหม่เพื่อปั๊ม, หรือ cron สร้างเควสวันถัดไปตอนตี 2
     //  แล้วผู้ใช้เคลมก่อนรีเซ็ตตี 5) frontend เอาไปแสดงข้อความให้ตรงเหตุได้
     dailyLimitReached: result.daily_limit_reached ?? false,
+    // พรีเมียมขาดไป 1 วันแล้ว streak ไม่ขาด (streak freeze) — frontend เอาไปบอกผู้ใช้ว่าสิทธิ์ถูกใช้ไป
+    streakFrozen: result.streak_frozen ?? false,
     xp_earned: result.xp_earned,
     total_xp: result.total_xp,
     current_streak: result.current_streak,
     longest_streak: result.longest_streak,
+    // วันเรียนล่าสุดจาก DB — frontend ห้ามเดาเองจากนาฬิกาเครื่องผู้ใช้
+    last_quest_date: result.last_quest_date ?? null,
     grade: result.grade,
   });
 };

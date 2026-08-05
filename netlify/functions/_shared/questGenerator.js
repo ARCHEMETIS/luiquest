@@ -21,14 +21,23 @@ function isActiveRoadmapLimitError(err) {
   return String(err?.message || '').includes('FREE_PLAN_ACTIVE_ROADMAP_LIMIT');
 }
 
+// ต้องตรงกับ isPremiumActive ใน create-payment.js เสมอ เพื่อเช็ควันหมดอายุแบบเดียวกัน
+export function isPremiumActive(profile, now = new Date()) {
+  if (!profile?.is_premium || !profile.premium_until) return false;
+  const premiumUntil = new Date(profile.premium_until);
+  return Number.isFinite(premiumUntil.getTime()) && premiumUntil > new Date(now);
+}
+
 // คัด starter_quests(topic_id, level) มาเป็น daily_quest วันที่ 1 ของ roadmap ใหม่
 async function seedDayOneFromStarter(admin, { roadmapId, topicId, level }) {
-  const { data: starter } = await admin
+  const { data: starter, error: starterErr } = await admin
     .from('starter_quests')
     .select('id, title, description, content, checklist, xp_reward')
     .eq('topic_id', topicId)
     .eq('level', level)
+    .eq('day_number', 1) // เลือกเฉพาะวันแรก เพราะคลังมีหลายวันต่อหัวข้อ×ระดับ
     .maybeSingle();
+  if (starterErr) console.error('โหลด starter quest วันที่ 1 ไม่สำเร็จ:', starterErr);
 
   // ยังไม่มี starter quest ของหัวข้อ×ระดับนี้ (เช่นเติมเนื้อหาไม่ทัน) — กันไม่ให้ onboarding ค้าง
   const title = starter?.title ?? 'เควสแรก: เริ่มสำรวจหัวข้อนี้กันเลย';
@@ -73,8 +82,8 @@ async function pauseActiveRoadmaps(admin, userId) {
 // เพดานหัวข้อที่เก็บไว้ของแผนฟรี — เช็คก่อนสร้าง roadmap ใหม่เท่านั้น (สลับหัวข้อเดิมไม่โดนเช็ค)
 // ไม่นับแถว status='failed' (generate ไม่สำเร็จ ไม่ใช่หัวข้อที่เก็บไว้จริง — กัน retry กินเพดานฟรี)
 async function assertSavedCapacity(admin, userId) {
-  const { data: profile } = await admin.from('profiles').select('is_premium').eq('id', userId).maybeSingle();
-  if (profile?.is_premium) return;
+  const { data: profile } = await admin.from('profiles').select('is_premium, premium_until').eq('id', userId).maybeSingle();
+  if (isPremiumActive(profile)) return;
   const { count } = await admin
     .from('roadmaps')
     .select('id', { count: 'exact', head: true })
