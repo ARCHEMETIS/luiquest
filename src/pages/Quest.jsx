@@ -77,6 +77,10 @@ export default function Quest() {
   // วันพัก (done_today) ไม่มีเควสให้อ่าน day_number — นับเควสที่ทำจบไปแล้วของ roadmap นี้แทน
   // (null = ยังไม่รู้ → หน้าเควสซ่อนหลอด roadmap ไปเลย ดีกว่าโชว์ 0% ทั้งที่ทำมาหลายวันแล้ว)
   const [restDayPhasePct, setRestDayPhasePct] = useState(null);
+  // สัญญาณการเรียนรู้ที่เคยบันทึกไว้ (pilot "อ่านแล้วลุยโจทย์") — เก็บ questId คู่กันเสมอ
+  // จะได้ไม่หยิบแถวของเควสก่อนสลับหัวข้อมาใช้ระหว่างที่ของเควสใหม่ยังอ่านไม่เสร็จ
+  // ต้องรู้ก่อนเรนเดอร์โจทย์ ไม่งั้นรีเฟรชกลางคันแล้วจะถามข้อที่ตอบไปแล้วซ้ำ
+  const [learningSignal, setLearningSignal] = useState(null); // { questId, row } — row null = ยังไม่เคยตอบ
   // กัน response เก่าแซง: ถ้าสลับหัวข้อ (roadmapId เปลี่ยน) ระหว่างโหลด เควสของหัวข้อเก่าที่ตอบช้ากว่าต้องถูกทิ้ง
   // ไม่งั้นหน้าโชว์ชื่อหัวข้อใหม่แต่เนื้อเควส/quest.id เป็นของเก่า → เคลมผิดเควส
   const latestReq = useRef(null);
@@ -154,6 +158,38 @@ export default function Quest() {
       cancelled = true;
     };
   }, [apiStatus, roadmapId, session?.user?.id]);
+
+  // อ่านสัญญาณของเควสวันนี้ตรงจาก Supabase (RLS: learning_signals_select_own ให้อ่านของตัวเองได้)
+  // ยิงเฉพาะเควสที่มีโจทย์จริง ๆ — เควสส่วนใหญ่ไม่มี จะได้ไม่เปลืองโควตาฟรีไปกับ query ที่ไม่มีใครใช้
+  // อ่านพลาดก็ถือว่ายังไม่เคยตอบ (server เขียนแบบ write-once อยู่แล้ว ตอบซ้ำจึงไม่ทับของเดิม)
+  useEffect(() => {
+    const userId = session?.user?.id;
+    const questId = quest?.id;
+    if (!questId || !userId || !quest?.content?.exercise) return;
+    let cancelled = false;
+    (async () => {
+      const { data } = await supabase
+        .from('quest_learning_signals')
+        .select('pre_lesson_correct, first_attempt_correct, revealed_answer, difficulty, time_fit')
+        .eq('user_id', userId)
+        .eq('quest_id', questId)
+        .maybeSingle();
+      if (!cancelled) setLearningSignal({ questId, row: data ?? null });
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [quest?.id, session?.user?.id]);
+
+  // telemetry ล้วน — ยิงทิ้งไม่รอผล (api.learningSignal กลืน error ของตัวเองแล้วคืน null)
+  // ★ ห้าม await หรือเอาผลไปตัดสินใจอะไร การเคลม XP ต้องไม่ได้รับผลกระทบแม้ตัวนี้ล่มทั้งหมด
+  const handleSignal = useCallback(
+    (payload) => {
+      if (!quest?.id || !token) return;
+      api.learningSignal({ quest_id: quest.id, ...payload }, token);
+    },
+    [quest?.id, token]
+  );
 
   // /me ล้มเหลว (network/500) — โชว์หน้า "ลองใหม่" แทนที่จะค้าง skeleton ตลอดกาลหรือเด้งไป onboarding ผิด ๆ
   if (profileError && !profile) {
@@ -277,6 +313,8 @@ export default function Quest() {
           : { id: null, title: '', desc: '', minutes: activeRoadmap.minutes_per_day, xp: 0, content: null }
       }
       checklistItems={checklist.map((c) => ({ id: c.id, label: c.label, link_url: c.link_url }))}
+      signal={learningSignal?.questId === quest?.id ? learningSignal.row : undefined}
+      onSignal={handleSignal}
       stats={stats}
       onRetry={loadQuest}
       onClaim={handleClaim}

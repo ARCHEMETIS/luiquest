@@ -12,6 +12,9 @@ import { QUEST_BANK_beginner_w2 } from './quest-bank-beginner-days8-14.mjs';
 import { QUEST_BANK_intermediate_w2 } from './quest-bank-intermediate-days8-14.mjs';
 import { QUEST_BANK_advanced_w2 } from './quest-bank-advanced-days8-14.mjs';
 
+import { EXERCISES_DATA_ML_BEGINNER } from './exercises-data-ml-beginner.mjs';
+import { attachExercise, exercisesByDay } from './exercise-schema.mjs';
+
 const QUEST_BANK = [
   ...QUEST_BANK_beginner,
   ...QUEST_BANK_intermediate,
@@ -20,6 +23,22 @@ const QUEST_BANK = [
   ...QUEST_BANK_intermediate_w2,
   ...QUEST_BANK_advanced_w2,
 ];
+
+// ── pilot "อ่าน + โจทย์" — เฉพาะ Data/ML มือใหม่ วัน 1-7 (วันที่ 1 อยู่ใน seed-starter-quests.mjs) ──
+// จงใจเก็บโจทย์ไว้คนละไฟล์กับตัวเควส: รีวิวโจทย์ทีเดียวจบ และถอด pilot ออกได้โดยไม่แตะคลังเควส
+const PILOT_TOPIC = 'data-ml';
+const PILOT_LEVEL = 'beginner';
+const PILOT_EXERCISES = exercisesByDay(EXERCISES_DATA_ML_BEGINNER);
+
+function withPilotExercise(quest) {
+  if (quest.topicSlug !== PILOT_TOPIC || quest.level !== PILOT_LEVEL) return quest;
+  const pair = PILOT_EXERCISES.get(quest.dayNumber);
+  if (!pair) return quest;
+  return {
+    ...quest,
+    content: attachExercise(quest.content, pair, `${PILOT_TOPIC}/${PILOT_LEVEL} วันที่ ${quest.dayNumber}`),
+  };
+}
 
 const KNOWN_TOPIC_SLUGS = new Set(['python', 'data-ml', 'web', 'ai-tools', 'excel', 'finance']);
 const VALID_LEVELS = new Set(['beginner', 'intermediate', 'advanced']);
@@ -104,7 +123,7 @@ async function main() {
     throw new Error(`ไม่พบ topic ใน DB: ${missingSlugs.join(', ')} — รัน schema.sql seed topics ก่อน`);
   }
 
-  const rows = QUEST_BANK.map((quest) => ({
+  const rows = QUEST_BANK.map(withPilotExercise).map((quest) => ({
     topic_id: topicIdBySlug.get(quest.topicSlug),
     level: quest.level,
     day_number: quest.dayNumber,

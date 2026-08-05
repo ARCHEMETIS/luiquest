@@ -105,6 +105,32 @@ const PREVIEW_STATES = [
 // state ที่โชว์เควส + checklist เต็ม ๆ (ต่างกันแค่ banner/ตัวเลข)
 const QUEST_STATES = ["ready", "broken", "day1"];
 
+// ---- pilot "อ่านแล้วลุยโจทย์" (Data/ML วัน 1–7) ----
+// เควสบางวันแนบ content.exercise = { pre, post } มาด้วย: ถามก่อนอ่าน 1 ข้อ แล้วถามอีกข้อ
+// (คนละข้อ วัดเรื่องเดียวกัน) หลังติ๊กเช็คลิสต์ครบ — เทียบสองค่านี้ต่อคนคือสิ่งเดียวที่แยกออกว่า
+// "บทเรียนสอนได้ผล" หรือ "เขารู้อยู่แล้ว" เควสส่วนใหญ่ไม่มีก้อนนี้ หน้าต้องเหมือนเดิมเป๊ะ
+// ★ ห้ามยัด correct_index ลง DOM ก่อนผู้เรียนตอบ — อ่านตอนกดปุ่มเท่านั้น
+const asQuestion = (q) =>
+  q && typeof q.prompt === "string" && Array.isArray(q.choices) && q.choices.length > 0 && Number.isInteger(q.correct_index)
+    ? q
+    : null;
+
+const DIFFICULTY_CHIPS = [
+  { value: "too_easy", label: "ง่ายไป" },
+  { value: "right", label: "พอดี" },
+  { value: "too_hard", label: "ยากไป" },
+];
+const TIME_FIT_CHIPS = [
+  { value: "within_budget", label: "ทันเวลา" },
+  { value: "over_budget", label: "เกินเวลา" },
+];
+
+// ปุ่มตัวเลือกของโจทย์ — ยืมหน้าตาจากข้อเช็คลิสต์ให้เป็นภาษาเดียวกัน
+const CHOICE_BASE =
+  "dq-anim flex w-full items-center gap-3 rounded-2xl border-2 px-3.5 py-3 text-left text-[13px] leading-snug transition active:translate-y-px";
+const CHOICE_IDLE =
+  "cursor-pointer border-[#FBCFE8] bg-white/70 text-[#831843] hover:-translate-y-0.5 hover:border-[#F9A8D4] hover:bg-white hover:shadow-[0_10px_22px_rgba(236,72,153,.15)]";
+
 // path จาก Heroicons 24/outline (assets/heroicons — MIT): play-circle, book-open, chat-bubble-oval-left-ellipsis
 const ICON_PATHS = {
   play: [
@@ -238,6 +264,10 @@ export default function DailyQuestPage({
   onClaim,
   claiming = false,
   claimError = null,
+  // แถว quest_learning_signals ของเควสนี้ — undefined = ยังอ่านไม่เสร็จ (ห้ามใส่ default ที่นี่
+  // ไม่งั้น undefined จะกลายเป็น null แล้วโจทย์จะแวบขึ้นมาถามซ้ำก่อนรู้ว่าเคยตอบไปแล้ว)
+  signal,
+  onSignal,
 }) {
   const [ui, setUi] = useState(initialState);
   const [checked, setChecked] = useState([]);
@@ -253,6 +283,12 @@ export default function DailyQuestPage({
   // เพราะ inline animation ที่ค่าไม่เปลี่ยนจะไม่เล่นซ้ำตอนกดรอบสอง
   const [tapped, setTapped] = useState(null);
   const tapTimer = useRef(null);
+  // ---- โจทย์ก่อน/หลังอ่าน (มีเฉพาะเควสที่แนบ content.exercise มา) ----
+  const [preAnswered, setPreAnswered] = useState(false); // ตอบข้อก่อนอ่านในรอบนี้แล้ว
+  const [preSkipped, setPreSkipped] = useState(false); // กด "ข้ามไปอ่านเลย"
+  const [postPick, setPostPick] = useState(null); // index ที่เลือกล่าสุดของข้อหลังอ่าน (null = ยังไม่ตอบ)
+  const [postRevealed, setPostRevealed] = useState(false);
+  const [rating, setRating] = useState({ difficulty: null, time_fit: null });
 
   const baseUi = claimResult ? claimResult.kind : status ?? ui;
   const effectiveUi = doneDismissed && baseUi === "done" ? "restday" : baseUi;
@@ -270,6 +306,18 @@ export default function DailyQuestPage({
   const lessonObjectives = Array.isArray(quest.content?.objectives)
     ? quest.content.objectives.filter((o) => typeof o === "string" && o.trim())
     : [];
+  // โจทย์ก่อน/หลังอ่าน — เควสส่วนใหญ่ไม่มี (content เป็น null หรือ {}) ทุกอย่างข้างล่างจึงตกเป็น null แล้วหน้าเหมือนเดิมทุกจุด
+  const preQ = asQuestion(quest.content?.exercise?.pre);
+  const postQ = asQuestion(quest.content?.exercise?.post);
+  const hasExercise = !!(preQ || postQ);
+  const signalReady = signal !== undefined; // undefined = ยังอ่านแถวสัญญาณไม่เสร็จ
+  const preDone = preAnswered || signal?.pre_lesson_correct != null;
+  // ตอบข้อหลังอ่านไปแล้วตั้งแต่ก่อนรีเฟรช และรอบนี้ยังไม่ได้แตะ → โชว์สถานะเดิม ห้ามถามซ้ำ
+  const postLocked = postPick == null && signal?.first_attempt_correct != null;
+  const postAnswerShown = postLocked || postPick != null || postRevealed;
+  // ซ่อนบทเรียน/แหล่งอ่าน/เช็คลิสต์ ไว้จนกว่าจะตอบข้อก่อนอ่าน (หรือกดข้าม) — ถ้าอ่านก่อนตอบ ค่าที่วัดได้จะไม่มีความหมาย
+  // ระหว่างที่ signal ยังมาไม่ถึงก็ซ่อนไว้ก่อน ดีกว่าโชว์บทเรียนแล้วหุบกลับตอนรู้ว่ายังไม่เคยตอบ
+  const lessonGated = !!preQ && !preDone && !preSkipped;
 
   // เปลี่ยน quest (วันใหม่) แล้วล้าง checklist + ผลเคลมของเควสก่อนหน้าทิ้ง + เล่นชุด pop-in รอบใหม่
   useEffect(() => {
@@ -277,11 +325,24 @@ export default function DailyQuestPage({
     setClaimResult(null);
     setDoneDismissed(false);
     setIntro(true);
+    setPreAnswered(false);
+    setPreSkipped(false);
+    setPostPick(null);
+    setPostRevealed(false);
+    setRating({ difficulty: null, time_fit: null });
     const t = setTimeout(() => setIntro(false), 1200); // > หน่วงสูงสุด (.65s) + ความยาวท่า (.42s)
     return () => clearTimeout(t);
   }, [quest?.id]);
 
   useEffect(() => () => clearTimeout(tapTimer.current), []);
+
+  // แถวสัญญาณมาถึงแล้ว — เติมสถานะที่เคยบันทึกไว้ (รีเฟรชกลางคันต้องเห็นของเดิม ไม่ใช่เริ่มนับหนึ่งใหม่)
+  // ส่วน "ตอบข้อก่อน/หลังอ่านไปแล้วหรือยัง" อ่านจาก signal ตรง ๆ (preDone/postLocked) ไม่ต้องคัดลอกมาเก็บซ้ำ
+  useEffect(() => {
+    if (!signal) return;
+    if (signal.revealed_answer) setPostRevealed(true);
+    setRating({ difficulty: signal.difficulty ?? null, time_fit: signal.time_fit ?? null });
+  }, [signal]);
 
   // ใส่ท่า pop-in เฉพาะช่วง intro — นอกช่วงนั้นคืนค่า undefined ให้ element ไม่มี animation ค้าง
   const enter = (i) => (intro ? popIn(i) : undefined);
@@ -302,6 +363,31 @@ export default function DailyQuestPage({
   const toggleItem = (id) => {
     tap(id); // สั่นให้รู้ว่ารับแล้ว ก่อนค่อยไปเปลี่ยน state
     setChecked((c) => (c.includes(id) ? c.filter((x) => x !== id) : [...c, id]));
+  };
+
+  // ---- ตัวส่งสัญญาณของ pilot — telemetry ล้วน ยิงทิ้งไม่รอผล ไม่มีตัวไหนไปขวางการเคลม XP ----
+  const answerPre = (i) => {
+    if (!preQ || preDone) return;
+    setPreAnswered(true); // ไม่เฉลยตรงนี้เด็ดขาด เฉลยตอนนี้ = สปอยล์ข้อท้าย แล้วค่าที่วัดจะไม่มีความหมาย
+    onSignal?.({ event: "pre", correct: i === preQ.correct_index });
+  };
+
+  const answerPost = (i) => {
+    if (!postQ || postLocked) return;
+    // ส่งเฉพาะครั้งแรกของรอบนี้ (ฝั่ง server ก็เก็บเฉพาะคำตอบแรกอยู่แล้ว) ตอบใหม่ได้เพื่อให้ลองจนเข้าใจ
+    if (postPick == null) onSignal?.({ event: "post", correct: i === postQ.correct_index });
+    setPostPick(i);
+  };
+
+  const revealPost = () => {
+    setPostRevealed(true);
+    onSignal?.({ event: "reveal" });
+  };
+
+  const rate = (key, value) => {
+    const next = { ...rating, [key]: value };
+    setRating(next);
+    onSignal?.({ event: "rating", difficulty: next.difficulty, time_fit: next.time_fit });
   };
 
   const handleClaim = async () => {
@@ -648,6 +734,43 @@ export default function DailyQuestPage({
           {/* แถบ EXP แรงค์: B ──▶ A */}
           <RankBar stats={effectiveStats} style={enter(5)} />
 
+          {/* โจทย์ก่อนอ่าน (เฉพาะเควสที่แนบ content.exercise มา) — ถามก่อนเพื่อแยกให้ออกว่า
+              "รู้อยู่แล้ว" หรือ "บทเรียนสอนให้" รอ signalReady ก่อนค่อยถาม จะได้ไม่ถามข้อที่ตอบไปแล้วซ้ำ */}
+          {preQ && lessonGated && signalReady && (
+            <div className="dq-anim mt-4 rounded-2xl border-2 border-[#FBCFE8] bg-white/80 p-4" style={enter(6)}>
+              <h2 className="font-heading text-sm font-bold">ลองตอบก่อนอ่าน</h2>
+              <p className="mt-1 text-[11px] leading-relaxed text-[#9D5C7C]">
+                ลองตอบก่อนอ่าน จะได้รู้ว่าบทเรียนช่วยตรงไหน — ผิดก็ไม่หัก XP อะไรเลย
+              </p>
+              <p className="mt-2.5 whitespace-pre-line text-[13px] font-bold leading-relaxed text-[#831843]">{preQ.prompt}</p>
+              <div className="mt-2.5 flex flex-col gap-2">
+                {preQ.choices.map((c, i) => (
+                  <button key={i} type="button" onClick={() => answerPre(i)} className={`${CHOICE_BASE} ${CHOICE_IDLE}`}>
+                    {c}
+                  </button>
+                ))}
+              </div>
+              <button
+                type="button"
+                onClick={() => setPreSkipped(true)}
+                className="mt-3 text-[11px] font-bold text-[#9D5C7C] underline underline-offset-2 transition hover:text-[#8B5CF6]"
+              >
+                ข้ามไปอ่านเลย
+              </button>
+            </div>
+          )}
+
+          {/* ตอบข้อก่อนอ่านแล้ว — รับคำตอบไว้เฉย ๆ ไม่บอกถูกผิด เพราะจะไปสปอยล์ข้อท้ายที่ใช้วัดผลจริง */}
+          {preQ && preDone && (
+            <div
+              className="dq-anim mt-4 rounded-2xl border border-[#FBCFE8] bg-white/70 px-3.5 py-2.5 text-[11px] leading-relaxed text-[#9D5C7C]"
+              /* นอกช่วง intro (เพิ่งตอบเสร็จ) enter() คืน undefined — ใส่ dq-in ให้จาง ๆ เข้ามาเหมือน banner อื่น */
+              style={enter(6) ?? { animation: "dq-in .3s ease-out" }}
+            >
+              <span className="font-bold text-[#8B5CF6]">รับคำตอบก่อนอ่านแล้ว</span> — ยังไม่เฉลยนะ เดี๋ยวมีอีกข้อตอนท้ายไว้เทียบกัน
+            </div>
+          )}
+
           {/* การ์ดเควสวันนี้ */}
           <div className="dq-anim mt-4 rounded-2xl border-2 border-[#FBCFE8] bg-white/80 p-4" style={enter(6)}>
             <div className="flex items-center gap-2 text-[11px] text-[#9D5C7C]">
@@ -658,12 +781,12 @@ export default function DailyQuestPage({
             <h2 className="mt-1.5 font-heading text-[15px] font-bold leading-snug">{quest.title}</h2>
             <p className="mt-1 text-xs leading-relaxed text-[#9D5C7C]">{quest.desc}</p>
             {/* บทเรียนสั้นก่อนลงมือ — มีเฉพาะเควสที่เขียนมือ (คลัง starter_quests) เควสที่ AI สร้างจะไม่มี */}
-            {lessonIntro && (
+            {!lessonGated && lessonIntro && (
               <p className="mt-2.5 rounded-xl bg-[#FDF2F8] p-2.5 text-xs leading-relaxed text-[#7A4A63]">
                 {lessonIntro}
               </p>
             )}
-            {lessonObjectives.length > 0 && (
+            {!lessonGated && lessonObjectives.length > 0 && (
               <div className="mt-2.5">
                 <p className="text-[11px] font-bold text-[#9D5C7C]">จบวันนี้จะทำอะไรได้</p>
                 <ul className="mt-1 flex flex-col gap-1">
@@ -676,7 +799,7 @@ export default function DailyQuestPage({
                 </ul>
               </div>
             )}
-            {resources.length > 0 && (
+            {!lessonGated && resources.length > 0 && (
               <div className="mt-3 flex flex-wrap gap-2">
                 {resources.map((r) => (
                   <a
@@ -694,7 +817,8 @@ export default function DailyQuestPage({
             )}
           </div>
 
-          {/* checklist — gating: ครบทุกข้อถึงได้ XP */}
+          {/* checklist — gating: ครบทุกข้อถึงได้ XP (ซ่อนไว้ก่อนถ้ายังค้างโจทย์ก่อนอ่านอยู่) */}
+          {!lessonGated && (
           <div className="mt-4">
             <div className="flex items-baseline justify-between">
               <h3 className="font-heading text-sm font-bold">
@@ -735,6 +859,100 @@ export default function DailyQuestPage({
               })}
             </div>
           </div>
+          )}
+
+          {/* โจทย์หลังอ่าน + ความเห็นสั้น ๆ — โผล่ตอนติ๊กครบ ตอบหรือไม่ตอบก็เคลม XP ได้เหมือนเดิมทุกอย่าง */}
+          {hasExercise && allChecked && (
+            <div className="mt-4 flex flex-col gap-3" style={{ animation: "dq-in .25s ease-out" }}>
+              {postQ && (
+                <div className="rounded-2xl border-2 border-[#FBCFE8] bg-white/80 p-4">
+                  <h3 className="font-heading text-sm font-bold">วัดผลหลังอ่าน</h3>
+                  <p className="mt-1 text-[11px] leading-relaxed text-[#9D5C7C]">คนละข้อกับตอนแรก แต่วัดเรื่องเดียวกัน</p>
+                  <p className="mt-2.5 whitespace-pre-line text-[13px] font-bold leading-relaxed text-[#831843]">{postQ.prompt}</p>
+                  {postLocked ? (
+                    /* ตอบไปแล้วตั้งแต่ก่อนรีเฟรช — โชว์ผลเดิม ไม่ถามใหม่ (คำตอบแรกคือค่าที่เอาไปวัด) */
+                    <p className="mt-2.5 rounded-xl bg-[#FDF2F8] p-2.5 text-xs leading-relaxed text-[#7A4A63]">
+                      {signal.first_attempt_correct ? "ข้อนี้ตอบถูกไปแล้ว 🎉" : "ข้อนี้ตอบไปแล้ว — อ่านคำอธิบายข้างล่างได้เลย"}
+                    </p>
+                  ) : (
+                    <div className="mt-2.5 flex flex-col gap-2">
+                      {postQ.choices.map((c, i) => (
+                        <button
+                          key={i}
+                          type="button"
+                          onClick={() => answerPost(i)}
+                          /* เทียบ correct_index เฉพาะปุ่มที่ "ถูกเลือกไปแล้ว" เท่านั้น ก่อนตอบจึงไม่มีปุ่มไหนหน้าตาต่างกัน */
+                          className={`${CHOICE_BASE} ${
+                            postPick === i
+                              ? postPick === postQ.correct_index
+                                ? "border-emerald-400 bg-emerald-50 text-emerald-700"
+                                : "border-red-300 bg-red-50 text-red-600"
+                              : CHOICE_IDLE
+                          }`}
+                        >
+                          {c}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                  {postPick != null && (
+                    <p className={`mt-2.5 text-xs font-bold ${postPick === postQ.correct_index ? "text-emerald-600" : "text-red-500"}`}>
+                      {postPick === postQ.correct_index ? "ถูกต้อง! 🎉" : "ยังไม่ใช่ — เลือกใหม่ได้เลย (คำตอบแรกบันทึกไว้แล้ว)"}
+                    </p>
+                  )}
+                  {postAnswerShown && postQ.explanation && (
+                    <p className="mt-2 rounded-xl bg-[#FDF2F8] p-2.5 text-xs leading-relaxed text-[#7A4A63]">{postQ.explanation}</p>
+                  )}
+                  {!postAnswerShown && (
+                    <button
+                      type="button"
+                      onClick={revealPost}
+                      className="mt-3 text-[11px] font-bold text-[#9D5C7C] underline underline-offset-2 transition hover:text-[#8B5CF6]"
+                    >
+                      ดูเฉลย
+                    </button>
+                  )}
+                </div>
+              )}
+
+              {/* ความเห็นสั้น ๆ ต่อเควสวันนี้ — ไม่บังคับ ไม่มีผลกับ XP ใช้ปรับความยาก/ความยาวของเควสรุ่นถัดไป */}
+              <div className="rounded-2xl border border-[#FBCFE8] bg-white/70 px-3.5 py-3">
+                <p className="text-[11px] text-[#9D5C7C]">เควสวันนี้เป็นไงบ้าง (ตอบหรือไม่ตอบก็ได้)</p>
+                <div className="mt-2 flex flex-wrap gap-2">
+                  {DIFFICULTY_CHIPS.map((c) => (
+                    <button
+                      key={c.value}
+                      type="button"
+                      onClick={() => rate("difficulty", c.value)}
+                      className={`rounded-full px-3.5 py-1.5 text-[11px] font-bold transition active:translate-y-px ${
+                        rating.difficulty === c.value
+                          ? "border border-[#8B5CF6] bg-[#8B5CF6] text-white"
+                          : "border border-[#FBCFE8] bg-white/80 text-[#9D5C7C] hover:border-[#8B5CF6]/50 hover:text-[#8B5CF6]"
+                      }`}
+                    >
+                      {c.label}
+                    </button>
+                  ))}
+                </div>
+                <div className="mt-2 flex flex-wrap gap-2">
+                  {TIME_FIT_CHIPS.map((c) => (
+                    <button
+                      key={c.value}
+                      type="button"
+                      onClick={() => rate("time_fit", c.value)}
+                      className={`rounded-full px-3.5 py-1.5 text-[11px] font-bold transition active:translate-y-px ${
+                        rating.time_fit === c.value
+                          ? "border border-[#8B5CF6] bg-[#8B5CF6] text-white"
+                          : "border border-[#FBCFE8] bg-white/80 text-[#9D5C7C] hover:border-[#8B5CF6]/50 hover:text-[#8B5CF6]"
+                      }`}
+                    >
+                      {c.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+          )}
 
           {/* ปุ่มเคลม XP โผล่เมื่อติ๊กครบ — เลื่อนหน้าลงมาหาเอง */}
           {allChecked && (

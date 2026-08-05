@@ -36,6 +36,13 @@ export const api = {
   questToday: (token, roadmapId) =>
     callFn('quest-today', { method: 'GET', token, query: roadmapId ? { roadmap_id: roadmapId } : undefined }),
   completeQuest: (payload, token) => callFn('complete-quest', { body: payload, token }),
+  // telemetry การเรียนรู้ (pilot "อ่าน + โจทย์") — best-effort เท่านั้น
+  // ★ ห้ามให้ผลลัพธ์หรือ error ของตัวนี้ไปบล็อกการเคลม XP ผู้เรียนต้องได้ XP แม้ telemetry ล่ม
+  learningSignal: (payload, token) =>
+    callFn('learning-signal', { body: payload, token }).catch((err) => {
+      console.warn('[learning-signal] บันทึกไม่สำเร็จ (ไม่กระทบ XP):', err?.message || err);
+      return null;
+    }),
   // สลับหัวข้อที่ active (progress หัวข้อเดิมเก็บไว้) — UI เรียกใช้ตอนหน้าโปรไฟล์/nav มาถึง (ticket 09)
   switchRoadmap: (roadmapId, token) => callFn('switch-roadmap', { body: { roadmap_id: roadmapId }, token }),
   // ลบหัวข้อทิ้งถาวร (คืนโควตาเพดานฟรี 3 หัวข้อ) — progress ของหัวข้อนั้นหายหมด แต่ XP/streak สะสมอยู่บน

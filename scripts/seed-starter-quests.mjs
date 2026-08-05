@@ -16,6 +16,8 @@
 // (whitelist 24 โดเมน) — ห้ามแต่ง deep URL เอง ตามข้อกำหนด ticket 04
 
 import { createClient } from '@supabase/supabase-js';
+import { EXERCISES_DATA_ML_BEGINNER } from './exercises-data-ml-beginner.mjs';
+import { attachExercise } from './exercise-schema.mjs';
 
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -420,12 +422,21 @@ async function main() {
     throw new Error(`ไม่พบ topic ใน DB: ${missingSlugs.join(', ')} — รัน schema.sql seed topics ก่อน`);
   }
 
+  // pilot "อ่าน + โจทย์" วันที่ 1 ของ Data/ML มือใหม่ — ตรวจด้วย validator ตัวเดียวกับวัน 2-14
+  // (ก่อนหน้านี้ไฟล์นี้ไม่ได้ตรวจอะไรเลย โจทย์ที่ใส่มาผิดรูปจะหลุดขึ้น production ได้)
+  const pilotDayOne = EXERCISES_DATA_ML_BEGINNER.find((e) => e.dayNumber === 1);
+
   const rows = STARTER_QUESTS.map((q) => ({
     topic_id: topicIdBySlug.get(q.topicSlug),
     level: q.level,
+    // ระบุ day_number ตรง ๆ ไม่พึ่ง default ของ DB — conflict target เป็น 3 คอลัมน์แล้ว
+    day_number: 1,
     title: q.title,
     description: q.description,
-    content: q.content,
+    content:
+      q.topicSlug === 'data-ml' && q.level === 'beginner'
+        ? attachExercise(q.content, pilotDayOne, 'data-ml/beginner วันที่ 1')
+        : q.content,
     checklist: q.checklist,
     xp_reward: XP_REWARD,
   }));
