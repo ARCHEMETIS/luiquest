@@ -13,6 +13,11 @@ import { canInstall, needsIosHint, promptInstall, snooze, subscribe } from "../l
 // รอให้ผู้ใช้ได้ใช้แอพก่อนค่อยชวน — เด้งทันทีที่เปิดหน้าแรกคือวิธีที่ทำให้คนกดปิดทิ้ง
 const SHOW_DELAY_MS = 20000;
 
+// ขนาด grid จริงของ GhostMascot — ต้องย่อด้วย scale เท่านั้น (ดูคอมเมนต์ตรงที่เรียกใช้)
+const GHOST_GRID_W = 96;
+const GHOST_GRID_H = 108;
+const GHOST_SIZE = 44;
+
 export default function InstallPrompt() {
   const [visible, setVisible] = useState(false);
   const [leaving, setLeaving] = useState(false);
@@ -105,9 +110,31 @@ export default function InstallPrompt() {
           </button>
 
           <div className="flex items-center gap-3">
-            <div className="lq-install-ghost shrink-0" style={{ animation: "lq-install-bob 2.2s ease-in-out infinite" }}>
-              <GhostMascot mood="celebrate" className="h-11 w-11" />
-            </div>
+            {/* ★ GhostMascot เป็น inline-block ขนาดจริง 96×108 — สั่ง h-/w- ไม่ได้ย่อตัวผี
+                กล่องเล็กลงแต่ตัวผียังใหญ่เท่าเดิม แล้วล้นไปทับตัวหนังสือ (เจอบนโน้ตบุ๊ก 5 ส.ค. 2026)
+                ต้องย่อด้วย absolute + scale จากมุมบนซ้าย แบบเดียวกับ HeaderMascot ใน AppShellLayout */}
+            <span
+              className="lq-install-ghost relative inline-block shrink-0 overflow-hidden"
+              style={{
+                width: GHOST_SIZE,
+                height: GHOST_SIZE * (GHOST_GRID_H / GHOST_GRID_W),
+                animation: "lq-install-bob 2.2s ease-in-out infinite",
+              }}
+            >
+              <span
+                style={{
+                  position: "absolute",
+                  top: 0,
+                  left: 0,
+                  width: GHOST_GRID_W,
+                  height: GHOST_GRID_H,
+                  transform: `scale(${GHOST_SIZE / GHOST_GRID_W})`,
+                  transformOrigin: "top left",
+                }}
+              >
+                <GhostMascot mood="celebrate" />
+              </span>
+            </span>
 
             <div className="min-w-0 flex-1">
               <p className="font-heading text-[13px] font-bold leading-snug text-[#831843]">
