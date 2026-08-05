@@ -264,6 +264,12 @@ export default function DailyQuestPage({
   const effectiveRankUp = claimResult?.kind === "rankup" ? claimResult : MOCK.rankUp;
   // ลิงก์แหล่งเรียนที่แนบมากับ checklist — โชว์เป็นชิปลิงก์ด่วนเหนือ checklist (คนละก้อนกับตัวเช็คลิสต์เอง)
   const resources = checklistItems.filter((item) => item.link_url);
+  // บทเรียนจาก quest.content — คลังเควสเขียนมือมี {intro, objectives} ส่วนเควสที่ Gemini สร้างเป็น {}
+  // (questGenerator.js เขียน content: {} ตรง ๆ) จึงต้องเผื่อทั้ง null, {} และชนิดข้อมูลที่ไม่ตรง
+  const lessonIntro = typeof quest.content?.intro === "string" ? quest.content.intro.trim() : "";
+  const lessonObjectives = Array.isArray(quest.content?.objectives)
+    ? quest.content.objectives.filter((o) => typeof o === "string" && o.trim())
+    : [];
 
   // เปลี่ยน quest (วันใหม่) แล้วล้าง checklist + ผลเคลมของเควสก่อนหน้าทิ้ง + เล่นชุด pop-in รอบใหม่
   useEffect(() => {
@@ -651,6 +657,25 @@ export default function DailyQuestPage({
             </div>
             <h2 className="mt-1.5 font-heading text-[15px] font-bold leading-snug">{quest.title}</h2>
             <p className="mt-1 text-xs leading-relaxed text-[#9D5C7C]">{quest.desc}</p>
+            {/* บทเรียนสั้นก่อนลงมือ — มีเฉพาะเควสที่เขียนมือ (คลัง starter_quests) เควสที่ AI สร้างจะไม่มี */}
+            {lessonIntro && (
+              <p className="mt-2.5 rounded-xl bg-[#FDF2F8] p-2.5 text-xs leading-relaxed text-[#7A4A63]">
+                {lessonIntro}
+              </p>
+            )}
+            {lessonObjectives.length > 0 && (
+              <div className="mt-2.5">
+                <p className="text-[11px] font-bold text-[#9D5C7C]">จบวันนี้จะทำอะไรได้</p>
+                <ul className="mt-1 flex flex-col gap-1">
+                  {lessonObjectives.map((obj, i) => (
+                    <li key={i} className="flex gap-1.5 text-xs leading-relaxed text-[#9D5C7C]">
+                      <span aria-hidden="true" className="text-[#8B5CF6]">•</span>
+                      <span>{obj}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
             {resources.length > 0 && (
               <div className="mt-3 flex flex-wrap gap-2">
                 {resources.map((r) => (

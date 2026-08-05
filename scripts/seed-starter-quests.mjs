@@ -432,7 +432,10 @@ async function main() {
 
   const { data, error } = await supabase
     .from('starter_quests')
-    .upsert(rows, { onConflict: 'topic_id,level' })
+    // unique เดิมคือ (topic_id, level) แต่ migration 2026-08-04-quest-bank-days.sql เปลี่ยนเป็น
+    // (topic_id, level, day_number) เพื่อเก็บได้หลายวันต่อหัวข้อ×ระดับ — conflict target เดิมจึงชี้ไปยัง
+    // constraint ที่ไม่มีอยู่แล้ว รันเมื่อไหร่ก็ error ทันที (เจอตอน scrutinize แผนวันที่ 5 ส.ค. 2026)
+    .upsert(rows, { onConflict: 'topic_id,level,day_number' })
     .select('id, topic_id, level, title');
   if (error) throw error;
 

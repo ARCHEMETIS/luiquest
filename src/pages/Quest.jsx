@@ -270,8 +270,11 @@ export default function Quest() {
               desc: quest.description,
               minutes: activeRoadmap.minutes_per_day,
               xp: quest.xp_reward,
+              // เนื้อบทเรียน (intro/objectives) ที่คลังเควสเขียนไว้ — เดิมถูกตัดทิ้งตรงนี้ ไม่เคยขึ้นจอเลย
+              // ทั้งที่ quest-today.js select มาให้แล้ว เควสที่ Gemini สร้างจะเป็น {} ฝั่ง UI ต้องเผื่อไว้
+              content: quest.content ?? null,
             }
-          : { id: null, title: '', desc: '', minutes: activeRoadmap.minutes_per_day, xp: 0 }
+          : { id: null, title: '', desc: '', minutes: activeRoadmap.minutes_per_day, xp: 0, content: null }
       }
       checklistItems={checklist.map((c) => ({ id: c.id, label: c.label, link_url: c.link_url }))}
       stats={stats}
