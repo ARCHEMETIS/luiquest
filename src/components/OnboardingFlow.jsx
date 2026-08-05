@@ -80,6 +80,51 @@ const LEVELS = [
   { id: "solid", emoji: "🌳", title: "แน่นแล้ว", desc: "พื้นแน่นอยู่แล้ว อยากต่อยอดขั้นสูง" },
 ];
 
+// ระดับที่เลือกตรงนี้ตัดสินว่าจะได้คลังเควสชุดไหนไปทั้ง 14 วัน แต่คำว่า "พอมีพื้น" แต่ละคนตีความ
+// ไม่เหมือนกันเลย → เลือกพลาดตั้งแต่ข้อนี้ เควสก็ไม่ตรงมือไปทั้งเส้น
+// แก้ด้วยการบอกเป็น "สิ่งที่ทำได้จริง" ของหัวข้อนั้น ๆ แทนคำลอย ๆ ผู้ใช้เทียบกับตัวเองได้ทันที
+// (จำนวนขั้นตอน/ตัวเลือก/ค่าที่ส่งออกเหมือนเดิมทุกอย่าง เปลี่ยนแค่ข้อความอธิบาย)
+// key = id ของการ์ดหัวข้อด้านบน (ระวัง: การ์ด AI ใช้ id "ai" ส่วน slug ใน DB คือ "ai-tools")
+const LEVEL_ANCHORS = {
+  python: {
+    beginner: "ยังไม่เคยรันโค้ดเอง หรือเคยแต่ยังทำเองไม่ได้",
+    some: "ใช้ตัวแปร if loop ได้บ้าง แต่ยังไม่คล่อง",
+    solid: "เขียนฟังก์ชันและโปรแกรมเล็ก ๆ เองได้แล้ว",
+  },
+  "data-ml": {
+    beginner: "ยังไม่เคยเปิดไฟล์ข้อมูลด้วยโค้ด",
+    some: "เปิดตารางข้อมูล กรอง จัดกลุ่มได้บ้างแล้ว",
+    solid: "เคยเทรนโมเดลและอ่านค่าความแม่นยำเป็น",
+  },
+  web: {
+    beginner: "ยังไม่เคยเขียน HTML เองสักหน้า",
+    some: "จัดหน้าเว็บด้วย HTML/CSS ได้ แต่ JavaScript ยังงง",
+    solid: "ใช้ JavaScript ทำหน้าเว็บโต้ตอบได้แล้ว",
+  },
+  ai: {
+    beginner: "ยังไม่เคยใช้ ChatGPT หรือ AI ตัวไหนจริงจัง",
+    some: "ใช้ถามตอบได้ แต่ผลลัพธ์ยังไม่ค่อยตรงใจ",
+    solid: "เขียน prompt ให้ได้งานที่ใช้ได้จริงเป็นประจำ",
+  },
+  excel: {
+    beginner: "ยังไม่เคยเขียนสูตรเอง พิมพ์ตัวเลขอย่างเดียว",
+    some: "ใช้ SUM, IF, VLOOKUP ได้บ้าง",
+    solid: "ทำ PivotTable และสูตรซ้อนกันหลายชั้นได้",
+  },
+  finance: {
+    beginner: "ยังไม่เคยจดรายรับรายจ่ายจริงจัง",
+    some: "จดรายจ่ายอยู่บ้าง เริ่มมีเงินเก็บ",
+    solid: "มีเงินสำรองแล้ว กำลังมองเรื่องลงทุน",
+  },
+};
+
+// หัวข้อพิมพ์เองไม่มี anchor เฉพาะ (ไม่รู้ว่าเป็นเรื่องอะไร) → ใช้ข้อความกลางเดิม
+function levelsForTopic(topicId) {
+  const anchors = topicId ? LEVEL_ANCHORS[topicId] : null;
+  if (!anchors) return LEVELS;
+  return LEVELS.map((lv) => ({ ...lv, desc: anchors[lv.id] ?? lv.desc }));
+}
+
 const TIMES = [
   { id: 15, emoji: "☕", title: "15 นาที", desc: "ชิล ๆ วันละนิดก็ไปได้ไกล" },
   { id: 30, emoji: "🔥", title: "30 นาที", desc: "กำลังดี ไม่หนักไม่เบา" },
@@ -399,7 +444,7 @@ export default function OnboardingFlow({ initialState = "step1", onComplete, onE
                 <p className="mt-1 text-xs text-[#9D5C7C]">ตอบตรง ๆ ได้เลย เควสจะได้พอดีมือ</p>
               </div>
               <div className="mt-5 flex flex-col gap-2.5">
-                {LEVELS.map((lv) => (
+                {levelsForTopic(topicId).map((lv) => (
                   <OptionRow key={lv.id} option={lv} selected={levelId === lv.id} onSelect={() => setLevelId(lv.id)} />
                 ))}
               </div>

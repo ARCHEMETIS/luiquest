@@ -41,7 +41,9 @@ const AFTERNOON_HOUR = 12; // ก่อนเที่ยงไม่ทวง�
  * @param {{ profile: object|null, now?: Date }} args
  * @returns {{ id: string, text: string, mood: string }|null} null = ไม่มีอะไรควรพูด (เงียบไว้ดีกว่า)
  */
-export function pickMascotMessage({ profile, now = new Date() }) {
+// canInstall = ยังติดตั้งลงหน้าจอโฮมได้อยู่ไหม (ดู src/lib/installState.js) — ใช้เป็นประโยคสำรอง
+// ตอนไม่มีเรื่องเรียนจะพูด ไม่ใช่ประโยคหลัก
+export function pickMascotMessage({ profile, now = new Date(), canInstall = false }) {
   if (!profile) return null;
 
   const { dateStr, hour, minute } = bangkokParts(now);
@@ -120,6 +122,19 @@ export function pickMascotMessage({ profile, now = new Date() }) {
       id: 'streak-comeback',
       text: 'streak ขาดไปก็ไม่เป็นไรเลย~ ทำเควสวันนี้ก็เริ่มนับใหม่ทันที 💜',
       mood: 'idle',
+    };
+  }
+
+  // ---- ไม่มีเรื่องเรียนจะพูดแล้ว แต่ยังติดตั้งแอพลงหน้าจอได้อยู่: ชวนเบา ๆ ----
+  // ★ ต้องอยู่ล่างสุดเสมอ — เรื่องความคืบหน้าการเรียนสำคัญกว่าการชวนติดตั้งทุกกรณี
+  //   ประโยคนี้จึงโผล่เฉพาะตอนที่ปกติมาสคอตจะเงียบอยู่แล้ว ไม่ไปแย่งที่ของเรื่องเควส
+  //   (คูลดาวน์ + wasSpoken ของ NavMascot คุมความถี่ให้อยู่แล้ว พูดซ้ำใน session เดียวไม่ได้)
+  if (canInstall) {
+    return {
+      id: 'install-nudge',
+      text: 'อยากให้เราไปอยู่หน้าจอโฮมด้วยมั้ย? กดตรงนี้เลย~',
+      mood: 'celebrate',
+      action: 'install', // NavMascot เอาไปทำให้ฟองคำพูดกดได้
     };
   }
 

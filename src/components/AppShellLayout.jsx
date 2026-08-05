@@ -7,6 +7,7 @@
 import { useEffect, useState } from "react";
 import { NavLink, Outlet, useLocation } from "react-router-dom";
 import GhostMascot from "./GhostMascot.jsx";
+import InstallPrompt from "./InstallPrompt.jsx";
 import { LuiQuestFavicon } from "./LuiQuestLogo.jsx";
 import NavMascot from "./NavMascot.jsx";
 import ProfileDrawer from "./ProfileDrawer.jsx";
@@ -172,6 +173,9 @@ export default function AppShellLayout() {
       >
         {/* มาสคอตเดินเล่นบนขอบ nav — เฉพาะหน้าเควส (หน้าอันดับมีการ์ดปักท้ายจอ / หน้าโค้ชมีช่องพิมพ์ ตรงนั้นจะทับกัน) */}
         {isQuestTab && <NavMascot />}
+        {/* ชวนติดตั้งลงหน้าจอโฮม — อยู่ในนี้เพราะต้องเกาะ relative ของ <nav> เพื่อลอยเหนือแถบพอดี
+            ตัวมันเช็คเองว่าติดตั้งแล้ว / เพิ่งกดปิด / เบราว์เซอร์ไม่รองรับ แล้วไม่เรนเดอร์อะไรเลย */}
+        <InstallPrompt />
         <div className="relative grid pt-1" style={{ gridTemplateColumns: `repeat(${NAV_ITEMS.length}, minmax(0,1fr))` }}>
           <span
             aria-hidden="true"

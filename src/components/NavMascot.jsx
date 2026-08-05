@@ -16,6 +16,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import GhostMascot from "./GhostMascot.jsx";
 import { useProfile } from "../hooks/useProfile.jsx";
+import { canInstall, needsIosHint } from "../lib/installState.js";
 import {
   BUBBLE_VISIBLE_MS,
   FIRST_SPEAK_DELAY_MS,
@@ -55,13 +56,24 @@ export default function NavMascot() {
     setBubble(null);
   }, []);
 
+  // กดฟองคำพูดตอนน้องชวนติดตั้ง → เด้งการ์ดติดตั้งขึ้นมาเลย (InstallPrompt ดัก event นี้อยู่)
+  // ใช้ custom event แบบเดียวกับ luiquest-open-profile เพราะสองตัวนี้อยู่คนละกิ่งของ tree
+  const openInstall = useCallback(() => {
+    window.dispatchEvent(new CustomEvent("luiquest-show-install"));
+    dismiss();
+  }, [dismiss]);
+
   // ---- จังหวะพูด: คุมความถี่ที่นี่ที่เดียว (คูลดาวน์ + ห้ามพูดซ้ำใน session — ดู mascotChatter.js) ----
   useEffect(() => {
     const trySpeak = () => {
       if (bubbleRef.current) return; // พูดอยู่แล้ว
       if (document.hidden) return; // ไม่แอบพูดตอนผู้ใช้ไม่ได้ดู (เผาคูลดาวน์ทิ้งเปล่า ๆ)
       if (!cooldownPassed()) return;
-      const msg = pickMascotMessage({ profile: profileRef.current });
+      const msg = pickMascotMessage({
+        profile: profileRef.current,
+        // ประโยคชวนติดตั้งใช้ได้เฉพาะตอนติดตั้งได้จริง (Chrome ที่ยังไม่ติดตั้ง หรือ iOS ที่ต้องสอนกดเอง)
+        canInstall: canInstall() || needsIosHint(),
+      });
       if (!msg || wasSpoken(msg.id)) return;
       markSpoken(msg.id);
       bubbleRef.current = msg;
@@ -144,8 +156,8 @@ export default function NavMascot() {
           <>
             <button
               type="button"
-              onClick={dismiss}
-              aria-label="ปิดข้อความของมาสคอต"
+              onClick={bubble.action === "install" ? openInstall : dismiss}
+              aria-label={bubble.action === "install" ? "เปิดวิธีติดตั้งลงหน้าจอโฮม" : "ปิดข้อความของมาสคอต"}
               className="nav-mascot-bubble pointer-events-auto absolute left-1 max-w-[55%] rounded-2xl border border-[#FBCFE8] bg-white/95 px-3 py-1.5 text-left text-[10px] font-bold leading-snug text-[#831843] shadow-[0_8px_20px_rgba(139,92,246,.22)]"
               style={{ bottom: MASCOT_H + 28, animation: "nav-mascot-bubble-in .3s cubic-bezier(.22,1,.36,1) both" }}
             >
