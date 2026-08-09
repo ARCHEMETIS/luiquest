@@ -3,6 +3,7 @@ import { Routes, Route, Navigate, useLocation, useNavigate, useParams } from 're
 import Login from './pages/Login.jsx';
 import Onboarding from './pages/Onboarding.jsx';
 import Quest from './pages/Quest.jsx';
+import Plan from './pages/Plan.jsx';
 import Coach from './pages/Coach.jsx';
 import Leaderboard from './pages/Leaderboard.jsx';
 import Premium from './pages/Premium.jsx';
@@ -49,6 +50,7 @@ function AppRoutes() {
       />
       <Route element={<RequireAuth><AppShellLayout /></RequireAuth>}>
         <Route path="/quest" element={<Quest />} />
+        <Route path="/plan" element={<Plan />} />
         <Route path="/coach" element={<Coach />} />
         <Route path="/leaderboard" element={<Leaderboard />} />
       </Route>
