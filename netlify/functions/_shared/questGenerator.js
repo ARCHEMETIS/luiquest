@@ -205,6 +205,21 @@ function sanitizeChecklistLinks(items, topicTitle) {
   });
 }
 
+// กรองบทเรียนจาก Gemini ก่อนบันทึก เพื่อให้ response เพี้ยนไม่ทำเควสล้มทั้งก้อน
+function sanitizeQuestContent(value) {
+  const intro = typeof value?.intro === 'string' ? value.intro.trim().slice(0, 500) : '';
+  const objectives = (Array.isArray(value?.objectives) ? value.objectives : [])
+    .filter((item) => typeof item === 'string')
+    .map((item) => item.trim().slice(0, 200))
+    .filter(Boolean)
+    .slice(0, 4);
+  if (!intro && objectives.length === 0) return {};
+  return {
+    ...(intro ? { intro } : {}),
+    ...(objectives.length ? { objectives } : {}),
+  };
+}
+
 const GENERATION_CLAIM_STALE_MS = 2 * 60 * 1000;
 const QUEST_SELECT = 'id, roadmap_id, phase_id, day_number, scheduled_date, title, description, content, xp_reward, source_starter_id';
 
@@ -367,7 +382,7 @@ Respect the learner's daily time budget exactly:
 - 30 minutes: exactly 3 short tasks.
 - 60 minutes: at most 4 short tasks.
 
-The first quest must be practical today and contain 2-4 checklist items. A checklist label must say "ค้นหา..." when it points the learner to search for something; it must not assert that a specific course or lesson was found.
+The first quest must be practical today and contain 2-4 checklist items. Write intro as 2-3 concise Thai sentences: first say what the learner is starting today, then say what today's quest adds. Write objectives as 2-4 concrete, checkable capabilities in Thai, using the authored-bank style such as "สร้าง...ได้" or "อธิบาย...ได้". A checklist label must say "ค้นหา..." when it points the learner to search for something; it must not assert that a specific course or lesson was found.
 
 For every checklist item, link_url must be null or exactly one of these permitted search URL patterns:
 - https://www.youtube.com/results?search_query=<query>
@@ -380,7 +395,7 @@ export function buildFreeformRoadmapPrompt({ topicTitle, level, minutesPerDay })
 ระดับพื้นฐาน: ${LEVEL_LABEL_TH[level] ?? level}
 เวลาที่มีต่อวัน: ${minutesPerDay} นาที
 
-ออกแบบ roadmap ~4 เฟส + เควสแรกที่ทำได้ทันทีวันนี้ ตามกติกาที่กำหนด ตอบเป็น JSON ตาม schema เท่านั้น`;
+ออกแบบ roadmap ~4 เฟส + เควสแรกที่ทำได้ทันทีวันนี้ โดย intro 2-3 ประโยคต้องบอกว่าผู้เรียนกำลังเริ่มอะไรและวันนี้จะเพิ่มอะไร ส่วน objectives เป็นความสามารถภาษาไทยที่ตรวจสอบได้ 2-4 ข้อ ตอบเป็น JSON ตาม schema เท่านั้น`;
 }
 
 /**
@@ -534,7 +549,7 @@ export async function createFreeformRoadmap(admin, { userId, topicTitle, level, 
     scheduledDate: learningDayStr(),
     title: String(generated.first_quest.title ?? topicTitle).slice(0, 200),
     description: String(generated.first_quest.description ?? '').slice(0, 500),
-    content: {},
+    content: sanitizeQuestContent(generated.first_quest),
     xpReward: clampXp(generated.first_quest.xp_reward),
     sourceStarterId: null,
     checklist: checklist.map((item, i) => ({ ...item, order_index: i })),
@@ -560,7 +575,7 @@ const CONTINUATION_SYSTEM_PROMPT = `You extend an existing LuiQuest Thai learnin
 
 You have no browser. You cannot verify that any course, video, instructor, lesson, or URL exists. Never invent course names, video titles, instructor names, claims that a specific lesson was found, or deep URLs.
 
-Write concise, friendly Thai. Build exactly one micro-skill that follows from the current phase. Never jump ahead, never repeat a recent quest, and make the learner do one clear next step.
+Write concise, friendly Thai. Build exactly one micro-skill that follows from the current phase. Never jump ahead, never repeat a recent quest, and make the learner do one clear next step. Write intro as 2-3 concise Thai sentences that explicitly reference what the learner did the day before, then state what today's quest adds. Write objectives as 2-4 concrete, checkable capabilities in Thai, using the authored-bank style such as "สร้าง...ได้" or "อธิบาย...ได้".
 For every phase description, explicitly state its prerequisite and its outcome.
 Respect the learner's daily time budget exactly:
 - 15 minutes: 2-3 short tasks.
@@ -602,7 +617,7 @@ function buildContinuationPrompt({
   targetPhaseNumber,
 }) {
   const avoid = recentTitles.length
-    ? `เควสล่าสุดที่เพิ่งทำไป (ห้ามซ้ำ ให้ต่อยอดเป็นสเต็ปถัดไป): ${recentTitles.join(' | ')}`
+    ? `เควสเมื่อวานคือรายการแรก ตามด้วยเควสก่อนหน้านั้น (ห้ามซ้ำ ให้ต่อยอดเป็นสเต็ปถัดไป): ${recentTitles.join(' | ')}`
     : 'ยังไม่มีเควสก่อนหน้าในรายการล่าสุด';
   const phaseCtx = needsNewPhase
     ? `วันนี้เป็นจุดเริ่มเฟสใหม่ (เฟสที่ ${targetPhaseNumber}) — ตั้งชื่อ/คำอธิบายเฟสใหม่ให้ต่อเนื่องจาก roadmap`
@@ -624,7 +639,7 @@ ${avoid}
 
 ${phaseCtx}
 
-ออกแบบเควสของวันนี้ตาม schema เท่านั้น (JSON ล้วน)`;
+ออกแบบเควสของวันนี้ โดย intro 2-3 ประโยคต้องอ้างถึงสิ่งที่ผู้เรียนทำเมื่อวานแล้วบอกว่าวันนี้ต่อยอดอะไร และ objectives ต้องเป็นความสามารถภาษาไทยที่ตรวจสอบได้ 2-4 ข้อ ตาม schema เท่านั้น (JSON ล้วน)`;
 }
 
 // fallback แบบ static สำหรับหัวข้อ curated เท่านั้น เมื่อ Gemini หมด chain ทั้งหมด (#03)
@@ -815,7 +830,7 @@ export async function generateNextQuest(admin, { roadmap, dayNumber, scheduledDa
     scheduledDate,
     title: String(generated.title).slice(0, 200),
     description: String(generated.description ?? '').slice(0, 500),
-    content: {},
+    content: sanitizeQuestContent(generated),
     xpReward: clampXp(generated.xp_reward),
     sourceStarterId: null,
     checklist: checklist.map((item, i) => ({ ...item, order_index: i })),

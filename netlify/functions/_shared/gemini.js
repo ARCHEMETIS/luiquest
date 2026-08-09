@@ -193,6 +193,13 @@ const QUEST_SHAPE_SCHEMA = {
   properties: {
     title: { type: 'STRING' },
     description: { type: 'STRING' },
+    intro: { type: 'STRING' },
+    objectives: {
+      type: 'ARRAY',
+      items: { type: 'STRING' },
+      minItems: 2,
+      maxItems: 4,
+    },
     xp_reward: { type: 'INTEGER' },
     checklist: {
       type: 'ARRAY',
@@ -201,10 +208,10 @@ const QUEST_SHAPE_SCHEMA = {
       maxItems: 4,
     },
   },
-  required: ['title', 'description', 'xp_reward', 'checklist'],
+  required: ['title', 'description', 'intro', 'objectives', 'xp_reward', 'checklist'],
 };
 
-// เควสเดี่ยว: { title, description, xp_reward, checklist: [{label, link_url}] }
+// เควสเดี่ยว: { title, description, intro, objectives, xp_reward, checklist: [{label, link_url}] }
 export const QUEST_JSON_SCHEMA = QUEST_SHAPE_SCHEMA;
 
 // roadmap เต็ม (สร้างใหม่): { topic_ok, phases: [{phase_number, title, description}], first_quest: <QUEST_JSON_SCHEMA> }
@@ -241,6 +248,13 @@ export const QUEST_CONTINUATION_JSON_SCHEMA = {
   properties: {
     title: { type: 'STRING' },
     description: { type: 'STRING' },
+    intro: { type: 'STRING' },
+    objectives: {
+      type: 'ARRAY',
+      items: { type: 'STRING' },
+      minItems: 2,
+      maxItems: 4,
+    },
     xp_reward: { type: 'INTEGER' },
     checklist: {
       type: 'ARRAY',
@@ -251,5 +265,5 @@ export const QUEST_CONTINUATION_JSON_SCHEMA = {
     phase_title: { type: 'STRING' },
     phase_description: { type: 'STRING' },
   },
-  required: ['title', 'description', 'xp_reward', 'checklist', 'phase_title', 'phase_description'],
+  required: ['title', 'description', 'intro', 'objectives', 'xp_reward', 'checklist', 'phase_title', 'phase_description'],
 };
