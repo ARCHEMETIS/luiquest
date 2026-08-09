@@ -245,6 +245,31 @@ const Skeleton = ({ className = "" }) => (
   <div className={`animate-pulse rounded-2xl bg-[#FBCFE8]/50 ${className}`} />
 );
 
+const TomorrowQuestPreview = ({ quest }) => {
+  const objectives = Array.isArray(quest?.objectives)
+    ? quest.objectives.filter((o) => typeof o === "string" && o.trim())
+    : [];
+  return (
+    <div className="w-full rounded-2xl border-2 border-[#FBCFE8] bg-white/80 p-4 text-left">
+      <p className="text-[11px] font-bold text-[#8B5CF6]">พรุ่งนี้ตอนตี 5 ได้ลุยต่อ</p>
+      <h2 className="mt-1.5 font-heading text-[15px] font-bold leading-snug">{quest.title}</h2>
+      <p className="mt-2.5 text-[11px] font-bold text-[#9D5C7C]">จบพรุ่งนี้จะทำอะไรได้</p>
+      {objectives.length > 0 ? (
+        <ul className="mt-1 flex flex-col gap-1">
+          {objectives.map((objective, i) => (
+            <li key={i} className="flex gap-1.5 text-xs leading-relaxed text-[#9D5C7C]">
+              <span aria-hidden="true" className="text-[#8B5CF6]">•</span>
+              <span>{objective}</span>
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <p className="mt-1 text-xs leading-relaxed text-[#9D5C7C]">{quest.description}</p>
+      )}
+    </div>
+  );
+};
+
 export default function DailyQuestPage({
   initialState = "ready",
   onOpenCoach,
@@ -259,6 +284,7 @@ export default function DailyQuestPage({
   userInitial = MOCK.userInitial,
   quest = MOCK.quest,
   checklistItems = MOCK.checklist,
+  tomorrowQuest = null,
   stats,
   onRetry,
   onClaim,
@@ -289,6 +315,7 @@ export default function DailyQuestPage({
   const [postPick, setPostPick] = useState(null); // index ที่เลือกล่าสุดของข้อหลังอ่าน (null = ยังไม่ตอบ)
   const [postRevealed, setPostRevealed] = useState(false);
   const [rating, setRating] = useState({ difficulty: null, time_fit: null });
+  const ratingRef = useRef({ difficulty: null, time_fit: null });
 
   const baseUi = claimResult ? claimResult.kind : status ?? ui;
   const effectiveUi = doneDismissed && baseUi === "done" ? "restday" : baseUi;
@@ -330,6 +357,7 @@ export default function DailyQuestPage({
     setPostPick(null);
     setPostRevealed(false);
     setRating({ difficulty: null, time_fit: null });
+    ratingRef.current = { difficulty: null, time_fit: null };
     const t = setTimeout(() => setIntro(false), 1200); // > หน่วงสูงสุด (.65s) + ความยาวท่า (.42s)
     return () => clearTimeout(t);
   }, [quest?.id]);
@@ -341,7 +369,9 @@ export default function DailyQuestPage({
   useEffect(() => {
     if (!signal) return;
     if (signal.revealed_answer) setPostRevealed(true);
-    setRating({ difficulty: signal.difficulty ?? null, time_fit: signal.time_fit ?? null });
+    const savedRating = { difficulty: signal.difficulty ?? null, time_fit: signal.time_fit ?? null };
+    ratingRef.current = savedRating;
+    setRating(savedRating);
   }, [signal]);
 
   // ใส่ท่า pop-in เฉพาะช่วง intro — นอกช่วงนั้นคืนค่า undefined ให้ element ไม่มี animation ค้าง
@@ -385,7 +415,9 @@ export default function DailyQuestPage({
   };
 
   const rate = (key, value) => {
-    const next = { ...rating, [key]: value };
+    if (ratingRef.current[key] === value) return;
+    const next = { ...ratingRef.current, [key]: value };
+    ratingRef.current = next;
     setRating(next);
     onSignal?.({ event: "rating", difficulty: next.difficulty, time_fit: next.time_fit });
   };
@@ -592,20 +624,32 @@ export default function DailyQuestPage({
             +{effectiveDone.earnedXp} XP
           </p>
           <h1 className="mt-2 font-heading text-xl font-bold">เควสวันนี้เสร็จแล้ว! 🎉</h1>
-          <p className="mt-1.5 text-sm text-[#9D5C7C]">
-            streak พุ่งเป็น <span className="font-bold text-[#831843]">{effectiveDone.newStreak} วันติด</span> 🔥
-            — อวดให้เพื่อนอิจฉาหน่อยมั้ย
-          </p>
+          {tomorrowQuest?.title ? (
+            <p className="mt-1.5 text-sm text-[#9D5C7C]">
+              streak พุ่งเป็น <span className="font-bold text-[#831843]">{effectiveDone.newStreak} วันติด</span> 🔥 — พรุ่งนี้มีเควสต่อรอแล้ว
+            </p>
+          ) : (
+            <p className="mt-1.5 text-sm text-[#9D5C7C]">
+              streak พุ่งเป็น <span className="font-bold text-[#831843]">{effectiveDone.newStreak} วันติด</span> 🔥
+              — อวดให้เพื่อนอิจฉาหน่อยมั้ย
+            </p>
+          )}
           <div className="mt-6 flex w-full max-w-[280px] flex-col gap-2.5">
-            <button
-              onClick={() => setDoneDismissed(true)}
-              className="w-full rounded-full bg-gradient-to-r from-violet-500 to-pink-500 px-4 py-2.5 font-heading text-sm font-bold text-white shadow-[0_10px_24px_rgba(139,92,246,.30)] transition hover:-translate-y-0.5 hover:shadow-[0_14px_30px_rgba(139,92,246,.42)] hover:brightness-105 active:translate-y-px"
-            >
-              ไปต่อ ดูความคืบหน้า
-            </button>
+            {tomorrowQuest?.title ? (
+              <TomorrowQuestPreview quest={tomorrowQuest} />
+            ) : (
+              <button
+                onClick={() => setDoneDismissed(true)}
+                className="w-full rounded-full bg-gradient-to-r from-violet-500 to-pink-500 px-4 py-2.5 font-heading text-sm font-bold text-white shadow-[0_10px_24px_rgba(139,92,246,.30)] transition hover:-translate-y-0.5 hover:shadow-[0_14px_30px_rgba(139,92,246,.42)] hover:brightness-105 active:translate-y-px"
+              >
+                ไปต่อ ดูความคืบหน้า
+              </button>
+            )}
             <button
               onClick={() => onShareStreak?.()}
-              className="w-full rounded-full bg-gradient-to-r from-violet-500 to-pink-500 px-4 py-2.5 font-heading text-sm font-bold text-white shadow-[0_10px_24px_rgba(139,92,246,.30)] transition hover:-translate-y-0.5 hover:shadow-[0_14px_30px_rgba(139,92,246,.42)] hover:brightness-105 active:translate-y-px"
+              className={tomorrowQuest?.title
+                ? "w-full rounded-full border-2 border-[#FBCFE8] bg-white/80 px-4 py-2.5 font-heading text-sm font-bold text-[#831843] transition hover:border-[#8B5CF6]/50 hover:text-[#8B5CF6] active:translate-y-px"
+                : "w-full rounded-full bg-gradient-to-r from-violet-500 to-pink-500 px-4 py-2.5 font-heading text-sm font-bold text-white shadow-[0_10px_24px_rgba(139,92,246,.30)] transition hover:-translate-y-0.5 hover:shadow-[0_14px_30px_rgba(139,92,246,.42)] hover:brightness-105 active:translate-y-px"}
             >
               แชร์การ์ด streak 🔥
             </button>
@@ -616,7 +660,9 @@ export default function DailyQuestPage({
               ชวนเพื่อนมาลุยด้วยกัน
             </button>
           </div>
-          <p className="mt-4 text-[11px] text-[#9D5C7C]/80">เควสใหม่มาตอนตี 5 ของพรุ่งนี้ — พักได้เต็มที่</p>
+          {!tomorrowQuest?.title && (
+            <p className="mt-4 text-[11px] text-[#9D5C7C]/80">เควสใหม่มาตอนตี 5 ของพรุ่งนี้ — พักได้เต็มที่</p>
+          )}
         </main>
       )}
 
@@ -638,9 +684,12 @@ export default function DailyQuestPage({
             streak <span className="font-bold text-[#831843]">{effectiveStats.streak} วันติด</span> 🔥 — เก่งมาก พักได้เต็มที่วันนี้
           </p>
           <div className="mt-6 flex w-full max-w-[280px] flex-col gap-2.5">
+            {tomorrowQuest?.title && <TomorrowQuestPreview quest={tomorrowQuest} />}
             <button
               onClick={() => onShareStreak?.()}
-              className="w-full rounded-full bg-gradient-to-r from-violet-500 to-pink-500 px-4 py-2.5 font-heading text-sm font-bold text-white shadow-[0_10px_24px_rgba(139,92,246,.30)] transition hover:-translate-y-0.5 hover:shadow-[0_14px_30px_rgba(139,92,246,.42)] hover:brightness-105 active:translate-y-px"
+              className={tomorrowQuest?.title
+                ? "w-full rounded-full border-2 border-[#FBCFE8] bg-white/80 px-4 py-2.5 font-heading text-sm font-bold text-[#831843] transition hover:border-[#8B5CF6]/50 hover:text-[#8B5CF6] active:translate-y-px"
+                : "w-full rounded-full bg-gradient-to-r from-violet-500 to-pink-500 px-4 py-2.5 font-heading text-sm font-bold text-white shadow-[0_10px_24px_rgba(139,92,246,.30)] transition hover:-translate-y-0.5 hover:shadow-[0_14px_30px_rgba(139,92,246,.42)] hover:brightness-105 active:translate-y-px"}
             >
               แชร์การ์ด streak 🔥
             </button>
@@ -651,7 +700,9 @@ export default function DailyQuestPage({
               ชวนเพื่อนมาลุยด้วยกัน
             </button>
           </div>
-          <p className="mt-4 text-[11px] text-[#9D5C7C]/80">เควสใหม่มาตอนตี 5 ของพรุ่งนี้ — เจอกันใหม่!</p>
+          {!tomorrowQuest?.title && (
+            <p className="mt-4 text-[11px] text-[#9D5C7C]/80">เควสใหม่มาตอนตี 5 ของพรุ่งนี้ — เจอกันใหม่!</p>
+          )}
 
           {/* ทางออกจากหน้านี้ — เดิมไม่มีเลย ค้างอยู่กับข้อความ "รอพรุ่งนี้" อย่างเดียว */}
           <div className="mt-5 flex flex-wrap items-center justify-center gap-2 text-[11px]">

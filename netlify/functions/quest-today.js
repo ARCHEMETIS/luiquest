@@ -69,6 +69,16 @@ export default async (req) => {
   if (questsErr) return json(500, { error: questsErr.message });
 
   const currentLearningDay = learningDayStr();
+  const nextQuest = (quests ?? []).find(
+    (q) => !doneIds.has(q.id) && q.scheduled_date && q.scheduled_date > currentLearningDay
+  );
+  const tomorrowQuest = nextQuest
+    ? {
+        title: nextQuest.title,
+        description: nextQuest.description,
+        objectives: Array.isArray(nextQuest.content?.objectives) ? nextQuest.content.objectives : [],
+      }
+    : null;
   let quest = (quests ?? []).find(
     (q) => !doneIds.has(q.id) && (!q.scheduled_date || q.scheduled_date <= currentLearningDay)
   );
@@ -97,6 +107,7 @@ export default async (req) => {
         status: 'done_today',
         roadmap,
         quest: null,
+        tomorrowQuest,
         // roadmap ที่พักไว้ไม่เข้า cron — อย่าสัญญาว่า "พรุ่งนี้มีเควสใหม่" เพราะจะไม่มีจนกว่าจะสลับกลับมา
         message: roadmap.is_active
           ? 'เควสวันนี้จบแล้ว เก่งมาก! พรุ่งนี้เช้ามีเควสใหม่รอ'
@@ -188,6 +199,7 @@ export default async (req) => {
     status: 'ready',
     roadmap,
     quest,
+    tomorrowQuest,
     checklist: checklist ?? [],
     phase,
     completedCount: doneIds.size,

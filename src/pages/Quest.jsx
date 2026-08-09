@@ -38,6 +38,7 @@ const PHASE_LENGTH_DAYS = 6;
 // เว้นช่วงก่อนถามซ้ำเมื่อ quest-today ตอบ generation_in_progress (มี request อื่นกำลังสร้างเควสอยู่)
 // 3 วินาทีพอดีกับเวลา generate จริง (~5-20 วิ) โดยไม่ถี่จนถล่ม function ตัวเอง
 const GENERATING_POLL_MS = 3000;
+const MAX_GENERATING_POLL_ATTEMPTS = 20;
 
 // % ความคืบหน้าใน phase ปัจจุบันจากเลขวันของเควส (วันที่ 1 ของ phase = 17%, วันที่ 6 = 100%)
 function phasePctFromDay(dayNumber) {
@@ -69,6 +70,7 @@ export default function Quest() {
   const token = session?.access_token;
 
   const [quest, setQuest] = useState(null);
+  const [tomorrowQuest, setTomorrowQuest] = useState(null);
   const [checklist, setChecklist] = useState([]);
   const [apiStatus, setApiStatus] = useState('loading'); // loading | not_ready | ready
   const [claiming, setClaiming] = useState(false);
@@ -87,11 +89,13 @@ export default function Quest() {
   // ถามซ้ำตอนเควสกำลังถูกสร้างโดย request อื่น — เก็บ timer ไว้เคลียร์ตอน unmount/สลับหัวข้อ
   // และเก็บ ref ของ loadQuest เองเพราะ callback อ้างถึงตัวเองไม่ได้ตอนประกาศ
   const retryTimer = useRef(null);
+  const generatingPollAttempts = useRef(0);
   const loadQuestRef = useRef(null);
 
-  const loadQuest = useCallback(async () => {
+  const loadQuest = useCallback(async (isGeneratingPoll = false) => {
     if (!token || !roadmapId) return;
     clearTimeout(retryTimer.current);
+    if (!isGeneratingPoll) generatingPollAttempts.current = 0;
     latestReq.current = roadmapId;
     setApiStatus('loading');
     try {
@@ -99,21 +103,33 @@ export default function Quest() {
       if (latestReq.current !== roadmapId) return; // มีหัวข้อใหม่แซงมาแล้ว ทิ้ง response นี้
       if (data.status === 'ready') {
         setQuest(data.quest);
+        setTomorrowQuest(data.tomorrowQuest ?? null);
         setChecklist(data.checklist ?? []);
+        generatingPollAttempts.current = 0;
         setApiStatus('ready');
       } else if (data.status === 'done_today') {
+        setTomorrowQuest(data.tomorrowQuest ?? null);
+        generatingPollAttempts.current = 0;
         setApiStatus('done_today'); // ทำเควสครบวันนี้แล้ว → หน้า "พักได้" ไม่ใช่ "ปั่นไม่ทัน"
       } else if (data.status === 'generation_in_progress') {
         // มี request อื่นจับจองการสร้างเควสวันนี้ไปแล้ว (กันยิง Gemini ซ้ำหลายรอบเพื่อเควสเดียว)
         // นี่ไม่ใช่ความล้มเหลว — ของกำลังมา ห้ามโชว์ "ปั่นไม่ทัน ลองใหม่" ให้ผู้ใช้เข้าใจผิด
         // คงหน้า loading ไว้แล้ววนถามซ้ำจนกว่าตัวที่จับจองอยู่จะเขียนเควสเสร็จ
-        setApiStatus('loading');
-        retryTimer.current = setTimeout(() => loadQuestRef.current?.(), GENERATING_POLL_MS);
+        generatingPollAttempts.current += 1;
+        if (generatingPollAttempts.current >= MAX_GENERATING_POLL_ATTEMPTS) {
+          setApiStatus('not_ready');
+        } else {
+          setApiStatus('loading');
+          retryTimer.current = setTimeout(() => loadQuestRef.current?.(true), GENERATING_POLL_MS);
+        }
       } else {
+        setTomorrowQuest(null);
+        generatingPollAttempts.current = 0;
         setApiStatus('not_ready');
       }
     } catch {
       if (latestReq.current !== roadmapId) return;
+      generatingPollAttempts.current = 0;
       setApiStatus('not_ready');
     }
   }, [token, roadmapId]);
@@ -320,6 +336,7 @@ export default function Quest() {
           : { id: null, title: '', desc: '', minutes: activeRoadmap.minutes_per_day, xp: 0, content: null }
       }
       checklistItems={checklist.map((c) => ({ id: c.id, label: c.label, link_url: c.link_url }))}
+      tomorrowQuest={tomorrowQuest}
       signal={signalForQuest}
       onSignal={handleSignal}
       stats={stats}
