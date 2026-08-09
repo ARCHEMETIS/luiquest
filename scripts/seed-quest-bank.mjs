@@ -15,14 +15,39 @@ import { QUEST_BANK_advanced_w2 } from './quest-bank-advanced-days8-14.mjs';
 import { EXERCISES_DATA_ML_BEGINNER } from './exercises-data-ml-beginner.mjs';
 import { attachExercise, exercisesByDay } from './exercise-schema.mjs';
 
-const QUEST_BANK = [
+const LANDING_PAGE_LABEL_PREFIX = new Map([
+  ['https://www.youtube.com/@KongRuksiamOfficial', 'เปิดช่อง KongRuksiam Official แล้วค้นหาในช่องตามโจทย์นี้ก่อนเลือกคลิป: '],
+  ['https://www.youtube.com/@prasertcbs', 'เปิดช่อง PrasertCBS แล้วค้นหาในช่องตามโจทย์นี้ก่อนเลือกคลิป: '],
+  ['https://blog.datath.com/', 'เปิดหน้าแรกของ DataTH แล้วมองหาเนื้อหาตามโจทย์นี้ก่อนเริ่ม: '],
+  ['https://datarockie.com/', 'เปิดหน้าแรกของ DataRockie แล้วมองหาเนื้อหาตามโจทย์นี้ก่อนเริ่ม: '],
+  ['https://code-th.com/', 'เปิดหน้าแรกของ Code-TH.com แล้วมองหาเนื้อหาตามโจทย์นี้ก่อนเริ่ม: '],
+  ['https://www.digitalskill.org/', 'เปิดหน้าแรกของ depa Digital Skill แล้วมองหาเนื้อหาตามโจทย์นี้ก่อนเริ่ม: '],
+  ['https://www.thepexcel.com/', 'เปิดหน้าแรกของเทพเอ็กเซล แล้วมองหาเนื้อหาตามโจทย์นี้ก่อนเริ่ม: '],
+  ['https://aommoney.com/', 'เปิดหน้าแรกของ aomMONEY แล้วมองหาเนื้อหาตามโจทย์นี้ก่อนเริ่ม: '],
+  ['https://www.moneybuffalo.in.th/', 'เปิดหน้าแรกของ Money Buffalo แล้วมองหาเนื้อหาตามโจทย์นี้ก่อนเริ่ม: '],
+  ['https://elearning.set.or.th/', 'เปิดหน้าแรกของ SET e-Learning แล้วมองหาเนื้อหาตามโจทย์นี้ก่อนเริ่ม: '],
+  ['https://www.setinvestnow.com/', 'เปิดหน้าแรกของ SET Invest Now แล้วมองหาเนื้อหาตามโจทย์นี้ก่อนเริ่ม: '],
+]);
+const SPECIFIC_RESOURCE_LABEL = /^(ดู|อ่าน|เรียน|ทำบทเรียน|ทบทวน|สมัครสมาชิกฟรีแล้วเรียน)/;
+
+export function clarifyLandingPageLinks(quests) {
+  return quests.map((quest) => ({
+    ...quest,
+    checklist: quest.checklist.map((item) => {
+      const prefix = LANDING_PAGE_LABEL_PREFIX.get(item.link_url);
+      return prefix && SPECIFIC_RESOURCE_LABEL.test(item.label) ? { ...item, label: `${prefix}${item.label}` } : item;
+    }),
+  }));
+}
+
+const QUEST_BANK = clarifyLandingPageLinks([
   ...QUEST_BANK_beginner,
   ...QUEST_BANK_intermediate,
   ...QUEST_BANK_advanced,
   ...QUEST_BANK_beginner_w2,
   ...QUEST_BANK_intermediate_w2,
   ...QUEST_BANK_advanced_w2,
-];
+]);
 
 // ── pilot "อ่าน + โจทย์" — เฉพาะ Data/ML มือใหม่ วัน 1-7 (วันที่ 1 อยู่ใน seed-starter-quests.mjs) ──
 // จงใจเก็บโจทย์ไว้คนละไฟล์กับตัวเควส: รีวิวโจทย์ทีเดียวจบ และถอด pilot ออกได้โดยไม่แตะคลังเควส
@@ -54,7 +79,11 @@ function rowError(index, message) {
   return new Error(`quest-bank row ${index + 1}: ${message}`);
 }
 
-export function validateQuestBank(quests, sourceText = readFileSync(SOURCE_LIST_PATH, 'utf8')) {
+export function validateQuestBank(
+  quests,
+  sourceText = readFileSync(SOURCE_LIST_PATH, 'utf8'),
+  { minDay = MIN_DAY, maxDay = MAX_DAY } = {}
+) {
   if (!Array.isArray(quests)) throw new Error('quest bank must be an array');
 
   quests.forEach((quest, index) => {
@@ -65,8 +94,8 @@ export function validateQuestBank(quests, sourceText = readFileSync(SOURCE_LIST_
     if (!VALID_LEVELS.has(quest.level)) {
       throw rowError(index, `invalid level "${quest.level}"`);
     }
-    if (!Number.isInteger(quest.dayNumber) || quest.dayNumber < MIN_DAY || quest.dayNumber > MAX_DAY) {
-      throw rowError(index, `dayNumber must be an integer from ${MIN_DAY} to ${MAX_DAY}, got ${quest.dayNumber}`);
+    if (!Number.isInteger(quest.dayNumber) || quest.dayNumber < minDay || quest.dayNumber > maxDay) {
+      throw rowError(index, `dayNumber must be an integer from ${minDay} to ${maxDay}, got ${quest.dayNumber}`);
     }
     if (typeof quest.title !== 'string' || !quest.title.trim()) throw rowError(index, 'title is required');
     if (typeof quest.description !== 'string' || !quest.description.trim()) {

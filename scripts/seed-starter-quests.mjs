@@ -18,6 +18,7 @@
 import { createClient } from '@supabase/supabase-js';
 import { EXERCISES_DATA_ML_BEGINNER } from './exercises-data-ml-beginner.mjs';
 import { attachExercise } from './exercise-schema.mjs';
+import { clarifyLandingPageLinks, validateQuestBank } from './seed-quest-bank.mjs';
 
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -34,7 +35,7 @@ const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
 const XP_REWARD = 10;
 
 // เนื้อหาอิงแหล่งเรียนจริงจาก thai-lesson-sources.md (เช็ค HTTP 200 ทุก URL แล้วก่อน seed)
-const STARTER_QUESTS = [
+const STARTER_QUESTS = clarifyLandingPageLinks([
   // ---------- 1. python ----------
   {
     topicSlug: 'python',
@@ -406,9 +407,15 @@ const STARTER_QUESTS = [
       { order_index: 4, label: 'ตั้งเป้าหมายการลงทุนระยะยาวของตัวเอง 1 ข้อ (เช่น เกษียณ/ซื้อบ้าน)', link_url: null },
     ],
   },
-];
+]);
 
 async function main() {
+  validateQuestBank(
+    STARTER_QUESTS.map((quest) => ({ ...quest, dayNumber: 1 })),
+    undefined,
+    { minDay: 1, maxDay: 1 }
+  );
+
   const { data: topics, error: topicsErr } = await supabase
     .from('topics')
     .select('id, slug');
