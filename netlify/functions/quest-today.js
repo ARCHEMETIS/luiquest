@@ -5,7 +5,7 @@
 // (roadmap ที่ถูกพักไว้ไม่เข้า cron รายคืน — ไม่มีทางนี้ผู้ใช้ที่สลับหัวข้อกลับมาจะค้างไร้เควสทั้งวัน)
 import { requireUser, unauthorized, json } from './_shared/auth.js';
 import { getAdminClient } from './_shared/supabaseAdmin.js';
-import { generateNextQuest } from './_shared/questGenerator.js';
+import { generateNextQuest, phaseNumberForDay } from './_shared/questGenerator.js';
 import { learningDayStr } from './_shared/datetime.js';
 import { isPremiumActive } from './_shared/questGenerator.js';
 
@@ -28,6 +28,76 @@ async function xpQuotaRemaining(admin, userId, learningDay) {
     .eq('award_date', learningDay);
 
   return Math.max(0, limit - (count ?? 0));
+}
+
+/**
+ * "พรุ่งนี้เจออะไร" — โชว์ตอนผู้เรียนทำเควสวันนี้จบ ซึ่งเป็นนาทีเดียวที่ฟีเจอร์นี้มีความหมาย
+ *
+ * ★ ตอนแรกอ่านจากแถว daily_quests ของวันถัดไปอย่างเดียว ซึ่งพังโดยดีไซน์: แถวนั้นถูกสร้างโดย cron
+ *   ตอนตี 2-5 แปลว่า ณ วินาทีที่ทำเควสวันนี้จบ เควสพรุ่งนี้ยังไม่มีตัวตน ผู้ใช้เลยไม่เคยเห็นอะไรเลย
+ *   (เจอจริง 9 ส.ค. 2026 — roadmap พิมพ์เองที่มีเควสวันเดียว)
+ *
+ * แก้โดยไล่ 3 ชั้นจากแม่นสุดไปหยาบสุด และ **ไม่เรียก Gemini แม้แต่ครั้งเดียว** (โควตาเป็นกองกลางทั้งแอพ)
+ * ชั้นที่หยาบกว่าจะพูดแค่ "ทิศทาง" ไม่ปั้นชื่อเควสปลอมขึ้นมา — ผิดคำสัญญาแย่กว่าไม่สัญญา
+ */
+async function buildTomorrowPreview(admin, { roadmap, quests, doneIds, currentLearningDay }) {
+  // ชั้น 1 — cron ปั่นไว้แล้ว ใช้ของจริง
+  const scheduled = quests.find(
+    (q) => !doneIds.has(q.id) && q.scheduled_date && q.scheduled_date > currentLearningDay
+  );
+  if (scheduled) {
+    return {
+      kind: 'scheduled',
+      title: scheduled.title,
+      description: scheduled.description,
+      objectives: Array.isArray(scheduled.content?.objectives) ? scheduled.content.objectives : [],
+    };
+  }
+
+  const maxDay = quests.reduce((max, q) => Math.max(max, q.day_number ?? 0), 0);
+  if (!maxDay) return null; // ยังไม่มีเควสสักวัน — ไม่มีอะไรให้พูดถึง "พรุ่งนี้"
+  const nextDay = maxDay + 1;
+
+  // ชั้น 2 — หัวข้อ curated ในช่วงที่เขียนเนื้อหามือไว้ (วัน 2-14): ชื่อจริงของพรุ่งนี้อ่านได้เลย
+  // เควสยังไม่ถูกสร้าง แต่ starter_quests คือต้นฉบับที่ cron จะหยิบไปใช้ ชื่อจึงตรงกันแน่นอน
+  if (roadmap.topic_id) {
+    const { data: starter } = await admin
+      .from('starter_quests')
+      .select('title, description, content')
+      .eq('topic_id', roadmap.topic_id)
+      .eq('level', roadmap.level)
+      .eq('day_number', nextDay)
+      .maybeSingle();
+    if (starter) {
+      return {
+        kind: 'authored',
+        title: starter.title,
+        description: starter.description,
+        objectives: Array.isArray(starter.content?.objectives) ? starter.content.objectives : [],
+      };
+    }
+  }
+
+  // ชั้น 3 — หัวข้อพิมพ์เอง หรือวัน 15+ : เควสพรุ่งนี้ยังไม่มีใครรู้ว่าคืออะไรจนกว่า AI จะปั่น
+  // บอกได้แค่เฟสที่กำลังจะเดินเข้าไป ซึ่ง deterministic จาก day_number ล้วน — ตรงกับที่ตัวปั่นจะใช้จริง
+  const phaseNumber = phaseNumberForDay(nextDay);
+  const cachedPhases = Array.isArray(roadmap.content?.phases) ? roadmap.content.phases : [];
+  const cached = cachedPhases.find((p) => p.phase_number === phaseNumber);
+  if (cached?.title) {
+    return { kind: 'phase', phaseTitle: cached.title, phaseDescription: cached.description ?? null };
+  }
+  const { data: phaseRow } = await admin
+    .from('phases')
+    .select('title, description')
+    .eq('roadmap_id', roadmap.id)
+    .eq('phase_number', phaseNumber)
+    .maybeSingle();
+  if (phaseRow?.title) {
+    return { kind: 'phase', phaseTitle: phaseRow.title, phaseDescription: phaseRow.description ?? null };
+  }
+
+  // เฟสถัดไปยังไม่ถูกวางเลย (roadmap เก่าที่ไม่มี content.phases แคชไว้) — เงียบดีกว่าเดา
+  return null;
 }
 
 export default async (req) => {
@@ -69,15 +139,14 @@ export default async (req) => {
   if (questsErr) return json(500, { error: questsErr.message });
 
   const currentLearningDay = learningDayStr();
-  const nextQuest = (quests ?? []).find(
-    (q) => !doneIds.has(q.id) && q.scheduled_date && q.scheduled_date > currentLearningDay
-  );
-  const tomorrowQuest = nextQuest
-    ? {
-        title: nextQuest.title,
-        description: nextQuest.description,
-        objectives: Array.isArray(nextQuest.content?.objectives) ? nextQuest.content.objectives : [],
-      }
+  // roadmap ที่พักไว้ไม่เข้า cron — จะไม่มีเควสพรุ่งนี้จริง ๆ จึงห้ามสัญญา (ตรงกับข้อความ done_today ด้านล่าง)
+  const tomorrowQuest = roadmap.is_active
+    ? await buildTomorrowPreview(admin, {
+        roadmap,
+        quests: quests ?? [],
+        doneIds,
+        currentLearningDay,
+      })
     : null;
   let quest = (quests ?? []).find(
     (q) => !doneIds.has(q.id) && (!q.scheduled_date || q.scheduled_date <= currentLearningDay)

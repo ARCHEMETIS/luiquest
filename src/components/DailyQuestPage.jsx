@@ -245,10 +245,30 @@ const Skeleton = ({ className = "" }) => (
   <div className={`animate-pulse rounded-2xl bg-[#FBCFE8]/50 ${className}`} />
 );
 
+// พรุ่งนี้จะรู้ชื่อเควสจริงก็ต่อเมื่อเนื้อหาถูกเขียนมือไว้ หรือ cron ปั่นไปแล้ว (backend คืน kind มาบอก)
+// หัวข้อพิมพ์เอง/วัน 15+ ยังไม่มีใครรู้ว่าเควสคืออะไร — บอกได้แค่เฟสที่กำลังจะเดินเข้าไป ห้ามปั้นชื่อปลอม
+const hasTomorrowPreview = (t) => Boolean(t?.title || t?.phaseTitle);
+
 const TomorrowQuestPreview = ({ quest }) => {
   const objectives = Array.isArray(quest?.objectives)
     ? quest.objectives.filter((o) => typeof o === "string" && o.trim())
     : [];
+
+  if (!quest?.title && quest?.phaseTitle) {
+    return (
+      <div className="w-full rounded-2xl border-2 border-[#FBCFE8] bg-white/80 p-4 text-left">
+        <p className="text-[11px] font-bold text-[#8B5CF6]">พรุ่งนี้ตอนตี 5 ได้ลุยต่อ</p>
+        <h2 className="mt-1.5 font-heading text-[15px] font-bold leading-snug">
+          ไปต่อเรื่อง “{quest.phaseTitle}”
+        </h2>
+        {quest.phaseDescription && (
+          <p className="mt-2 text-xs leading-relaxed text-[#9D5C7C]">{quest.phaseDescription}</p>
+        )}
+        <p className="mt-2 text-[11px] text-[#9D5C7C]/80">เควสของพรุ่งนี้กำลังถูกเตรียมให้ตอนตี 5</p>
+      </div>
+    );
+  }
+
   return (
     <div className="w-full rounded-2xl border-2 border-[#FBCFE8] bg-white/80 p-4 text-left">
       <p className="text-[11px] font-bold text-[#8B5CF6]">พรุ่งนี้ตอนตี 5 ได้ลุยต่อ</p>
@@ -624,7 +644,7 @@ export default function DailyQuestPage({
             +{effectiveDone.earnedXp} XP
           </p>
           <h1 className="mt-2 font-heading text-xl font-bold">เควสวันนี้เสร็จแล้ว! 🎉</h1>
-          {tomorrowQuest?.title ? (
+          {hasTomorrowPreview(tomorrowQuest) ? (
             <p className="mt-1.5 text-sm text-[#9D5C7C]">
               streak พุ่งเป็น <span className="font-bold text-[#831843]">{effectiveDone.newStreak} วันติด</span> 🔥 — พรุ่งนี้มีเควสต่อรอแล้ว
             </p>
@@ -635,7 +655,7 @@ export default function DailyQuestPage({
             </p>
           )}
           <div className="mt-6 flex w-full max-w-[280px] flex-col gap-2.5">
-            {tomorrowQuest?.title ? (
+            {hasTomorrowPreview(tomorrowQuest) ? (
               <TomorrowQuestPreview quest={tomorrowQuest} />
             ) : (
               <button
@@ -647,7 +667,7 @@ export default function DailyQuestPage({
             )}
             <button
               onClick={() => onShareStreak?.()}
-              className={tomorrowQuest?.title
+              className={hasTomorrowPreview(tomorrowQuest)
                 ? "w-full rounded-full border-2 border-[#FBCFE8] bg-white/80 px-4 py-2.5 font-heading text-sm font-bold text-[#831843] transition hover:border-[#8B5CF6]/50 hover:text-[#8B5CF6] active:translate-y-px"
                 : "w-full rounded-full bg-gradient-to-r from-violet-500 to-pink-500 px-4 py-2.5 font-heading text-sm font-bold text-white shadow-[0_10px_24px_rgba(139,92,246,.30)] transition hover:-translate-y-0.5 hover:shadow-[0_14px_30px_rgba(139,92,246,.42)] hover:brightness-105 active:translate-y-px"}
             >
@@ -660,7 +680,7 @@ export default function DailyQuestPage({
               ชวนเพื่อนมาลุยด้วยกัน
             </button>
           </div>
-          {!tomorrowQuest?.title && (
+          {!hasTomorrowPreview(tomorrowQuest) && (
             <p className="mt-4 text-[11px] text-[#9D5C7C]/80">เควสใหม่มาตอนตี 5 ของพรุ่งนี้ — พักได้เต็มที่</p>
           )}
         </main>
@@ -684,10 +704,10 @@ export default function DailyQuestPage({
             streak <span className="font-bold text-[#831843]">{effectiveStats.streak} วันติด</span> 🔥 — เก่งมาก พักได้เต็มที่วันนี้
           </p>
           <div className="mt-6 flex w-full max-w-[280px] flex-col gap-2.5">
-            {tomorrowQuest?.title && <TomorrowQuestPreview quest={tomorrowQuest} />}
+            {hasTomorrowPreview(tomorrowQuest) && <TomorrowQuestPreview quest={tomorrowQuest} />}
             <button
               onClick={() => onShareStreak?.()}
-              className={tomorrowQuest?.title
+              className={hasTomorrowPreview(tomorrowQuest)
                 ? "w-full rounded-full border-2 border-[#FBCFE8] bg-white/80 px-4 py-2.5 font-heading text-sm font-bold text-[#831843] transition hover:border-[#8B5CF6]/50 hover:text-[#8B5CF6] active:translate-y-px"
                 : "w-full rounded-full bg-gradient-to-r from-violet-500 to-pink-500 px-4 py-2.5 font-heading text-sm font-bold text-white shadow-[0_10px_24px_rgba(139,92,246,.30)] transition hover:-translate-y-0.5 hover:shadow-[0_14px_30px_rgba(139,92,246,.42)] hover:brightness-105 active:translate-y-px"}
             >
@@ -700,7 +720,7 @@ export default function DailyQuestPage({
               ชวนเพื่อนมาลุยด้วยกัน
             </button>
           </div>
-          {!tomorrowQuest?.title && (
+          {!hasTomorrowPreview(tomorrowQuest) && (
             <p className="mt-4 text-[11px] text-[#9D5C7C]/80">เควสใหม่มาตอนตี 5 ของพรุ่งนี้ — เจอกันใหม่!</p>
           )}
 

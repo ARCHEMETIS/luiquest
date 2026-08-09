@@ -567,7 +567,7 @@ export async function createFreeformRoadmap(admin, { userId, topicTitle, level, 
 // ~1 สัปดาห์ต่อเฟส — heuristic ง่าย ๆ ตัดสินใจ deterministic จาก day_number ล้วน (ไม่ให้ Gemini ตัดสินเรื่อง phase boundary)
 const PHASE_LENGTH_DAYS = 6;
 
-function phaseNumberForDay(dayNumber) {
+export function phaseNumberForDay(dayNumber) {
   return Math.floor((dayNumber - 1) / PHASE_LENGTH_DAYS) + 1;
 }
 
