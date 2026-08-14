@@ -64,6 +64,13 @@ const RANK_ARROWS = [
   { left: "38%", delay: ".9s", size: "14px" },
 ];
 
+// ประกายไฟตรงหัวค้อน (mood "building") — เด้งพร้อมจังหวะที่ค้อนลง
+const SPARKS = [
+  { left: "-26%", top: "26%", color: "#FBBF24", delay: "0s", size: ".8rem", char: "✦" },
+  { left: "-32%", top: "40%", color: "#F472B6", delay: ".3s", size: ".7rem", char: "✧" },
+  { left: "-18%", top: "44%", color: "#FBBF24", delay: ".15s", size: ".65rem", char: "✦" },
+];
+
 const MOOD_ANIMATION = {
   idle: "ghost-idle 1.2s steps(2) infinite",
   celebrate: "ghost-jump .5s steps(2) 3",
@@ -72,11 +79,17 @@ const MOOD_ANIMATION = {
   fireworks: "ghost-bounce .7s steps(2) infinite",
   rankup: "ghost-rankup 1.6s steps(4) infinite",
   groove: "ghost-dance .9s steps(2) infinite",
+  building: "ghost-build 1.2s steps(2) infinite",
 };
 
 // mood: "idle" | "celebrate" | "sad" | "sixseven" (ท่ามีม 6-7 มือชั่งซ้ายขวา)
 //       | "fireworks" (พลุระเบิดหลังตัว) | "rankup" (SSS เด้งบนหัว) | "groove" (เต้น+โน้ตเพลง)
+//       | "building" (ตอกค้อน+ประกายไฟ — ใช้กับฟีเจอร์ที่ยังทำไม่เสร็จ)
 // — prop celebrate เดิม (จาก ticket 11) ยังใช้ได้
+//
+// ★ ทำไม "building" ไม่ใช่ "sad" สำหรับหน้าที่ยังไม่เปิด (14 ส.ค. 2026):
+//   ผีร้องไห้ = ขอโทษที่ทำพัง แต่ฟีเจอร์ที่ยังไม่เสร็จไม่ได้พัง มันกำลังมา
+//   ท่าตอกค้อนสื่อว่า "ทำอยู่ อีกนิดเดียว" ซึ่งตรงกับความจริงและไม่ทำให้คนดูรู้สึกว่าแอพมีปัญหา
 export default function GhostMascot({ celebrate = false, mood, className = "" }) {
   const activeMood = mood || (celebrate ? "celebrate" : "idle");
 
@@ -90,6 +103,9 @@ export default function GhostMascot({ celebrate = false, mood, className = "" })
         @keyframes ghost-sixseven { 0%,100% { transform: rotate(-6deg) translateY(0); } 50% { transform: rotate(6deg) translateY(-3px); } }
         @keyframes ghost-bounce { 0%,100% { transform: translateY(0) scale(1); } 50% { transform: translateY(-10px) scale(1.03,.97); } }
         @keyframes ghost-rankup { 0%,20%,100% { transform: translateY(0) scale(1); } 10% { transform: translateY(-14px) scale(1.05); } }
+        @keyframes ghost-build { 0%,100% { transform: translateY(0); } 50% { transform: translateY(-3px); } }
+        @keyframes ghost-hammer { 0%,100% { transform: rotate(-52deg); } 45%,55% { transform: rotate(14deg); } }
+        @keyframes ghost-spark { 0%,40% { opacity: 0; transform: translateY(2px) scale(.4); } 50% { opacity: 1; transform: translateY(-5px) scale(1.1); } 100% { opacity: 0; transform: translateY(-14px) scale(.8); } }
         @keyframes ghost-hand-l { 0%,100% { transform: translateY(-8px); } 50% { transform: translateY(6px); } }
         @keyframes ghost-hand-r { 0%,100% { transform: translateY(6px); } 50% { transform: translateY(-8px); } }
         @keyframes ghost-num-pop { 0%,45%,100% { opacity: 0; transform: translateY(4px) scale(.6); } 10%,35% { opacity: 1; transform: translateY(-6px) scale(1); } }
@@ -256,6 +272,47 @@ export default function GhostMascot({ celebrate = false, mood, className = "" })
             {n.char}
           </span>
         ))}
+
+      {/* กำลังสร้าง: หมวกวิศวะ + ค้อนพิกเซลตอกลงซ้ำ ๆ + ประกายไฟกระเด็น */}
+      {activeMood === "building" && (
+        <>
+          {/* หมวกเซฟตี้ — ใช้ animation เดียวกับตัวผี จะได้ขยับพร้อมกันไม่หลุดจากหัว */}
+          <span
+            className="pointer-events-none absolute -top-2 left-1/2 -translate-x-1/2"
+            style={{ animation: "ghost-build 1.2s steps(2) infinite" }}
+          >
+            {/* โดม */}
+            <span className="absolute -top-[9px] left-1/2 h-3.5 w-11 -translate-x-1/2 rounded-t-[14px] bg-[#FBBF24]" />
+            {/* สันกลางหมวก */}
+            <span className="absolute -top-[9px] left-1/2 h-3.5 w-2 -translate-x-1/2 rounded-t-[6px] bg-[#F59E0B]" />
+            {/* ปีกหมวก */}
+            <span className="absolute top-[5px] left-1/2 h-[6px] w-[62px] -translate-x-1/2 rounded-[3px] bg-[#F59E0B]" />
+          </span>
+
+          {/* ค้อน = ด้ามยาว + หัวค้อนสี่เหลี่ยม หมุนรอบจุดหมุนที่ปลายด้าม (มือผี) */}
+          <span
+            className="pointer-events-none absolute -left-2 top-[38%] h-[22px] w-[5px] origin-bottom rounded-[1px] bg-[#B45309]"
+            style={{ animation: "ghost-hammer 1.2s steps(3) infinite" }}
+          >
+            <span className="absolute -left-[7px] -top-[3px] h-2.5 w-[19px] rounded-[2px] bg-[#94A3B8]" />
+          </span>
+          {SPARKS.map((s, i) => (
+            <span
+              key={i}
+              className="pointer-events-none absolute font-bold"
+              style={{
+                left: s.left,
+                top: s.top,
+                color: s.color,
+                fontSize: s.size,
+                animation: `ghost-spark 1.2s steps(3) ${s.delay} infinite`,
+              }}
+            >
+              {s.char}
+            </span>
+          ))}
+        </>
+      )}
 
       {activeMood === "sad" && (
         <>

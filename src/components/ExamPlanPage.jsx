@@ -744,6 +744,7 @@ export default function ExamPlanPage({
   learningDate,
   loading = false,
   loadError = null,
+  notReady = false,
   selectedPlanId,
   pendingAction,
   actionError,
@@ -789,6 +790,49 @@ export default function ExamPlanPage({
         <div className="flex items-center justify-between"><div className="space-y-2"><Skeleton className="h-3 w-28" /><Skeleton className="h-7 w-36" /></div><Skeleton className="h-9 w-28 rounded-full" /></div>
         <div className="mt-5 grid grid-cols-3 gap-2"><Skeleton className="h-10" /><Skeleton className="h-10" /><Skeleton className="h-10" /></div>
         <div className="mt-5 flex flex-col gap-3"><Skeleton className="h-36" /><Skeleton className="h-36" /><Skeleton className="h-36" /></div>
+      </div>
+    );
+  }
+
+  // ฟีเจอร์ยังไม่เปิด (ฝั่งฐานข้อมูลยังไม่ได้รัน migration) — ไม่ใช่ error ห้ามขึ้นการ์ดแดง
+  // พอรัน migration แล้ว RPC จะมีจริง notReady กลายเป็น false เอง หน้านี้หายไปโดยไม่ต้องแก้โค้ด
+  if (notReady) {
+    return (
+      <div className="flex min-h-full flex-col items-center justify-center px-8 pb-12 pt-6 text-center font-body text-[#831843]">
+        <GhostMascot mood="building" className="scale-75" />
+
+        {/* เทปกั้นเขตก่อสร้าง — บอกสถานะด้วยภาพก่อนอ่านตัวอักษร */}
+        <div
+          aria-hidden="true"
+          className="mt-3 h-2.5 w-full max-w-[320px] rounded-full border border-amber-300"
+          style={{ backgroundImage: 'repeating-linear-gradient(45deg, #FBBF24 0 7px, #78350F 7px 14px)' }}
+        />
+
+        <span className="mt-3 rounded-full border border-amber-300 bg-amber-50 px-3 py-1 text-[11px] font-bold text-amber-700">
+          ⚠ กำลังก่อสร้าง — เปิดเร็ว ๆ นี้
+        </span>
+        <h1 className="mt-3 font-heading text-xl font-bold">แผนอ่านสอบ</h1>
+        <p className="mt-2 max-w-[300px] text-sm leading-relaxed text-[#9D5C7C]">
+          บอกแค่วันสอบกับบทที่ต้องอ่าน แล้วให้ลุยเควสจัดตารางอ่านให้เอง
+        </p>
+
+        <ul className="mt-5 w-full max-w-[320px] space-y-2 text-left">
+          {[
+            'แบ่งบทที่ต้องอ่านลงแต่ละวัน จนถึงวันสอบ',
+            'ทุกเช้าบอกว่าวันนี้อ่านบทไหน กี่นาที',
+            'วันไหนอ่านไม่ทัน เลื่อนตารางให้ใหม่ทั้งแผน',
+          ].map((line) => (
+            <li
+              key={line}
+              className="flex min-w-0 items-start gap-2 rounded-2xl border-2 border-[#FBCFE8] bg-white/80 px-3.5 py-2.5 text-[13px] leading-snug"
+            >
+              <span aria-hidden="true" className="text-[#8B5CF6]">◆</span>
+              <span className="min-w-0">{line}</span>
+            </li>
+          ))}
+        </ul>
+
+        <p className="mt-5 text-xs text-[#9D5C7C]">ระหว่างนี้ลุยเควสประจำวันไปก่อนได้เลย</p>
       </div>
     );
   }

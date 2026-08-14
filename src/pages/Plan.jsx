@@ -46,9 +46,17 @@ function resultErrorMessage(code, fallback) {
   return RESULT_ERROR_COPY[code] || fallback;
 }
 
+// ฟีเจอร์ยังไม่เปิด = RPC ยังไม่มีในฐานข้อมูล (ยังไม่ได้รัน 2026-08-09-exam-plans.sql)
+// PostgREST ตอบ PGRST202 "Could not find the function ... in the schema cache"
+// แยกเคสนี้ออกจาก error จริง เพื่อโชว์หน้า "เร็ว ๆ นี้" แทนการ์ดแดง (14 ส.ค. 2026)
+function isFeatureNotDeployed(error) {
+  if (error?.code === 'PGRST202') return true;
+  return /Could not find the function/i.test(String(error?.message ?? ''));
+}
+
 export default function Plan() {
   const { patchProfile } = useProfile();
-  const [state, setState] = useState({ plans: [], learningDate: null, loading: true, error: null });
+  const [state, setState] = useState({ plans: [], learningDate: null, loading: true, error: null, notReady: false });
   const [selectedPlanId, setSelectedPlanId] = useState(null);
   const [actionState, setActionState] = useState({ pending: null, error: null, notice: null });
   const requestNumber = useRef(0);
@@ -65,10 +73,14 @@ export default function Plan() {
         throw new Error('EXAM_PLAN_RESPONSE_INVALID');
       }
       if (request !== requestNumber.current) return false;
-      setState({ plans: data.plans, learningDate: data.learning_date, loading: false, error: null });
+      setState({ plans: data.plans, learningDate: data.learning_date, loading: false, error: null, notReady: false });
       return true;
     } catch (error) {
       if (request !== requestNumber.current) return false;
+      if (isFeatureNotDeployed(error)) {
+        setState((current) => ({ ...current, loading: false, error: null, notReady: true }));
+        return false;
+      }
       setState((current) => ({
         ...current,
         loading: false,
@@ -264,6 +276,7 @@ export default function Plan() {
       learningDate={state.learningDate}
       loading={state.loading}
       loadError={state.error}
+      notReady={state.notReady}
       selectedPlanId={selectedPlanId}
       pendingAction={actionState.pending}
       actionError={actionState.error}
