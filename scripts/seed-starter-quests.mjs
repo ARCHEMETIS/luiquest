@@ -113,9 +113,9 @@ const STARTER_QUESTS = clarifyLandingPageLinks([
       ],
     },
     checklist: [
-      { order_index: 1, label: 'อ่านบทความแนะนำสาย Data Science จากบล็อก DataTH', link_url: 'https://blog.datath.com/' },
-      { order_index: 2, label: 'เปิดบัญชี Kaggle ฟรีที่ kaggle.com/learn', link_url: 'https://www.kaggle.com/learn' },
-      { order_index: 3, label: 'ดูคลิปแนะนำ Data/Python เบื้องต้นจากช่อง PrasertCBS 1 คลิป', link_url: 'https://www.youtube.com/@prasertcbs' },
+      { order_index: 1, label: 'อ่านบทความแนะนำสาย Data Science จากบล็อก DataTH', link_url: 'https://blog.datath.com/data-science/' },
+      { order_index: 2, label: 'เปิดบัญชี Kaggle ฟรีที่ kaggle.com/learn', link_url: 'https://www.kaggle.com/learn/python' },
+      { order_index: 3, label: 'ดูคลิปแนะนำ Data/Python เบื้องต้นจากช่อง PrasertCBS 1 คลิป', link_url: 'https://www.youtube.com/playlist?list=PLoTScYm9O0GFVfRk_MmZt0vQXNIi36LUz' },
       { order_index: 4, label: 'จดหัวข้อที่อยากรู้เพิ่ม 3 ข้อ เก็บไว้ถามโค้ช AI ทีหลัง', link_url: null },
     ],
   },

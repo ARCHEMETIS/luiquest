@@ -147,7 +147,7 @@ export const QUEST_BANK_beginner = [
       ],
     },
     checklist: [
-      { order_index: 1, label: 'เปิดบทเรียน Python เบื้องต้นใน Kaggle Learn และอ่านส่วนตัวแปรสั้น ๆ', link_url: 'https://www.kaggle.com/learn' },
+      { order_index: 1, label: 'เปิดบทเรียน Python เบื้องต้นใน Kaggle Learn และอ่านส่วนตัวแปรสั้น ๆ', link_url: 'https://www.kaggle.com/code/colinmorris/hello-python' },
       { order_index: 2, label: 'สร้าง Kaggle Notebook ใหม่ แล้วสร้างตัวแปร dataset_name และ row_goal ของตัวเอง', link_url: null },
       { order_index: 3, label: 'รันเซลล์ที่แสดงค่าตัวแปรทั้งสอง และเปลี่ยนค่า row_goal ทดลองอีก 1 รอบ', link_url: null },
       { order_index: 4, label: 'จดคำอธิบาย 2 บรรทัดว่าแต่ละตัวแปรเก็บข้อมูลอะไรและใช้เพื่ออะไร', link_url: null },
@@ -168,7 +168,7 @@ export const QUEST_BANK_beginner = [
       ],
     },
     checklist: [
-      { order_index: 1, label: 'เปิดบทเรียน Pandas เบื้องต้นใน Kaggle Learn และอ่านส่วนการดูข้อมูลตาราง', link_url: 'https://www.kaggle.com/learn' },
+      { order_index: 1, label: 'เปิดบทเรียน Pandas เบื้องต้นใน Kaggle Learn และอ่านส่วนการดูข้อมูลตาราง', link_url: 'https://www.kaggle.com/code/residentmario/creating-reading-and-writing' },
       { order_index: 2, label: 'เปิดโน้ตบุ๊กตัวอย่างที่มีตารางข้อมูล แล้วรันคำสั่ง head() เพื่อดูแถวแรก', link_url: null },
       { order_index: 3, label: 'จดชื่อคอลัมน์ 3 คอลัมน์ พร้อมเขียนว่าคอลัมน์แต่ละอันน่าจะบอกอะไร', link_url: null },
       { order_index: 4, label: 'จับคู่คอลัมน์กับคำถามที่อยากรู้ 1 ข้อ โดยยังไม่ต้องคำนวณคำตอบ', link_url: null },
@@ -189,7 +189,7 @@ export const QUEST_BANK_beginner = [
       ],
     },
     checklist: [
-      { order_index: 1, label: 'อ่านตัวอย่างการกรองข้อมูลหนึ่งเงื่อนไขจากบทเรียน Pandas ใน Kaggle Learn', link_url: 'https://www.kaggle.com/learn' },
+      { order_index: 1, label: 'อ่านตัวอย่างการกรองข้อมูลหนึ่งเงื่อนไขจากบทเรียน Pandas ใน Kaggle Learn', link_url: 'https://www.kaggle.com/code/residentmario/indexing-selecting-assigning' },
       { order_index: 2, label: 'เลือกคอลัมน์ประเภทข้อความ 1 คอลัมน์จาก dataset แล้วเลือกค่าที่อยากดู 1 ค่า', link_url: null },
       { order_index: 3, label: 'เขียนคำสั่งกรองให้เหลือแถวที่ตรงค่าที่เลือก และรันดูผลลัพธ์', link_url: null },
       { order_index: 4, label: 'จดจำนวนแถวก่อนกรองกับหลังกรอง พร้อมเขียนข้อสังเกต 1 ข้อ', link_url: null },
@@ -210,7 +210,7 @@ export const QUEST_BANK_beginner = [
       ],
     },
     checklist: [
-      { order_index: 1, label: 'ทบทวนตัวอย่างการสรุปข้อมูลใน Kaggle Learn ส่วนที่เกี่ยวกับค่าเฉลี่ย', link_url: 'https://www.kaggle.com/learn' },
+      { order_index: 1, label: 'ทบทวนตัวอย่างการสรุปข้อมูลใน Kaggle Learn ส่วนที่เกี่ยวกับค่าเฉลี่ย', link_url: 'https://www.kaggle.com/code/residentmario/summary-functions-and-maps' },
       { order_index: 2, label: 'เลือกคอลัมน์ตัวเลข 1 คอลัมน์ แล้วคำนวณค่าเฉลี่ยของคอลัมน์นั้นในโน้ตบุ๊ก', link_url: null },
       { order_index: 3, label: 'กรองกลุ่มข้อมูลจากวันที่ 4 แล้วคำนวณค่าเฉลี่ยของกลุ่มนั้นอีกครั้ง', link_url: null },
       { order_index: 4, label: 'เขียนเปรียบเทียบค่าเฉลี่ยของข้อมูลทั้งหมดกับกลุ่มที่กรองไว้ 2-3 ประโยค', link_url: null },
@@ -231,7 +231,7 @@ export const QUEST_BANK_beginner = [
       ],
     },
     checklist: [
-      { order_index: 1, label: 'อ่านบทความมุมมองการวิเคราะห์ข้อมูลจาก DataRockie เพื่อดูตัวอย่างคำถามเชิงข้อมูล', link_url: 'https://datarockie.com/' },
+      { order_index: 1, label: 'อ่านบทความมุมมองการวิเคราะห์ข้อมูลจาก DataRockie เพื่อดูตัวอย่างคำถามเชิงข้อมูล', link_url: 'https://datarockie.com/blog/data-analyst-complete-career-guide/' },
       { order_index: 2, label: 'เลือก dataset เดิม แล้วเขียนคำถามที่ตอบได้จริง 1 ข้อโดยใช้คำว่า ใคร อะไร หรือเมื่อไร', link_url: null },
       { order_index: 3, label: 'ระบุชื่อคอลัมน์ที่ต้องใช้ตอบคำถาม และกำหนดว่าจะใช้การกรองหรือค่าเฉลี่ย', link_url: null },
       { order_index: 4, label: 'ให้เพื่อนอ่านคำถาม 1 รอบ แล้วแก้คำที่ทำให้ตีความได้หลายแบบ', link_url: null },
