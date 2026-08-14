@@ -26,7 +26,15 @@ const GEMINI_API_KEY = env('GEMINI_API_KEY');
 //   → เอา 3.1-flash-lite (500 RPD) เข้ามาเป็นก้นถังของทั้งสอง chain: quest ~540 RPD, chat ~520 RPD
 //   เรียงลำดับตามเจตนา: quest เอาคุณภาพนำ (2.5-flash ก่อน) แล้วค่อยไหลลง lite ตอนโควตาตัวดีหมด;
 //   chat เอา 3.1-flash-lite นำเลยเพราะเป็นตัวกินจำนวนครั้ง (10 ข้อความ/คน/วัน) ไม่ได้ต้องการคุณภาพสูงสุด
-export const QUEST_MODEL_CHAIN = ['gemini-2.5-flash', 'gemini-3.5-flash', 'gemini-3.1-flash-lite'];
+//
+// อัพเดต 14 ส.ค. 2026 — **สลับ QUEST ให้เอา throughput นำแทนคุณภาพ (เตรียมเปิด QR ให้คนทั้งห้อง ~60 คนลองพร้อมกัน)**
+//   ของเดิม 2.5-flash นำ = รับได้แค่ **5 คน/นาที** คนที่ 6 ขึ้นไปต้องไล่ chain: 429 → หน่วง 1.5-3 วิ → ลองซ้ำ →
+//   429 → โมเดลถัดไป → หน่วงอีก ... รวม ~11-12 วิ **เกิน timeout 10 วิของ Netlify** = ผู้ใช้เห็น error ไม่ใช่แค่ช้า
+//   (timeout ตั้งใน netlify.toml ไม่ได้ Netlify ไม่มีคีย์นี้ — แก้ที่ลำดับ chain ได้ทางเดียว)
+//   → เอา 3.1-flash-lite (15 RPM) ขึ้นนำ: 15 คนแรก/นาที ได้ทันทีใน ~4 วิ (จับเวลาจริง 14 ส.ค. = 3.9 วิ)
+//     เหลือคนที่ 16+ เท่านั้นที่ต้องไหลลง 2.5-flash/3.5-flash ซึ่งยังว่างอยู่
+//   แลกมาด้วยคุณภาพ roadmap ที่ลดลงเล็กน้อย — **หลังงานนำเสนอ ถ้าอยากได้คุณภาพคืน สลับสองตัวแรกกลับ**
+export const QUEST_MODEL_CHAIN = ['gemini-3.1-flash-lite', 'gemini-2.5-flash', 'gemini-3.5-flash'];
 export const CHAT_MODEL_CHAIN = ['gemini-3.1-flash-lite', 'gemini-2.5-flash-lite', 'gemini-2.5-flash'];
 
 function sleep(ms) {

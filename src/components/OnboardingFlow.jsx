@@ -233,7 +233,10 @@ export default function OnboardingFlow({ initialState = "step1", onComplete, onE
         if (!cancelled) {
           setGenError(err?.message || "สร้างเควสไม่สำเร็จ ลองใหม่อีกครั้ง");
           // หัวข้อไม่ผ่านด่านกรอง = ต้องกลับไปแก้ที่ขั้น 1 (ขั้น 3 เป็นเรื่องเวลา แก้ยังไงก็ไม่ผ่าน)
-          setUi(err?.code === "TOPIC_NOT_ALLOWED" ? "step1" : "step3");
+          // generate ไม่สำเร็จ (Gemini หมด chain / คนแห่เข้าพร้อมกัน) ก็ต้องกลับขั้น 1 เหมือนกัน —
+          // ทางออกคือเปลี่ยนไปหัวข้อสำเร็จรูปที่ไม่แตะ AI ไม่ใช่การแก้เวลาต่อวันที่ขั้น 3 (14 ส.ค. 2026)
+          const backToTopic = err?.code === "TOPIC_NOT_ALLOWED" || err?.code === "GENERATION_FAILED";
+          setUi(backToTopic ? "step1" : "step3");
         }
       }
     })();

@@ -32,12 +32,30 @@ export default function Onboarding() {
       if (!topic) throw new Error('ไม่พบหัวข้อนี้ในระบบ');
       await api.startRoadmap({ topic_id: topic.id, level: mappedLevel, minutes_per_day: minutesPerDay }, token);
     } else {
-      const result = await api.generateQuest(
-        { topic_title: topicTitle, level: mappedLevel, minutes_per_day: minutesPerDay },
-        token
-      );
+      // Netlify ตัดฟังก์ชันที่รันเกิน 10 วิ แล้วตอบ 502 body ไม่ใช่ JSON — callFn จะโยนข้อความดิบ
+      // ("fn generate-quest ล้มเหลว (502): Task timed out...") ซึ่งเป็นภาษาอังกฤษและผู้ใช้ทำอะไรต่อไม่ถูก
+      // แปลงเป็นข้อความเดียวกับเคส failed: ทางออกจริงคือไปหัวข้อสำเร็จรูป ไม่ใช่กดซ้ำ (14 ส.ค. 2026)
+      let result;
+      try {
+        result = await api.generateQuest(
+          { topic_title: topicTitle, level: mappedLevel, minutes_per_day: minutesPerDay },
+          token
+        );
+      } catch (err) {
+        if (err?.code || (err?.status && err.status < 500)) throw err; // error ที่มีข้อความไทยของตัวเองอยู่แล้ว
+        const timeout = new Error('ตอนนี้คนใช้เยอะ สร้างหัวข้อใหม่ไม่ทัน — เลือกหัวข้อสำเร็จรูปได้เลย พร้อมใช้ทันที');
+        timeout.code = 'GENERATION_FAILED';
+        throw timeout;
+      }
       // generate-quest ตอบ 200 เสมอแม้ Gemini หมด chain ทั้งหมด (roadmap ถูก mark failed) — ต้องเช็ค flag เอง
-      if (result.failed) throw new Error('สร้างเควสไม่สำเร็จ ระบบขัดข้องชั่วคราว ลองใหม่อีกครั้ง');
+      //
+      // ข้อความนี้ต้องชี้ทางออกที่ใช้ได้จริง ไม่ใช่ "ลองใหม่อีกครั้ง": เคสที่ทำให้พังคือคนแห่เข้าพร้อมกัน
+      // แล้วชนเพดานต่อนาทีของ Gemini — กดซ้ำก็ชนซ้ำ แต่หัวข้อสำเร็จรูปไม่แตะ AI เลยจึงเข้าได้เสมอ (14 ส.ค. 2026)
+      if (result.failed) {
+        const err = new Error('ตอนนี้คนใช้เยอะ สร้างหัวข้อใหม่ไม่ทัน — เลือกหัวข้อสำเร็จรูปได้เลย พร้อมใช้ทันที');
+        err.code = 'GENERATION_FAILED';
+        throw err;
+      }
     }
     // ปล่อยให้หน้า "พร้อมลุย" โชว์แป๊บนึง แล้วค่อย refetch + พาไปหน้าเควสจริง
     //
