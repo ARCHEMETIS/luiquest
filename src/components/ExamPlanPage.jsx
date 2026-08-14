@@ -17,22 +17,22 @@ const FIELD_CLASS = "mt-1.5 w-full min-w-0 rounded-2xl border-2 border-[#FBCFE8]
 function ConstructionSign() {
   const STRIPES = 'repeating-linear-gradient(45deg, #FBBF24 0 7px, #78350F 7px 14px)';
   return (
-    <div aria-hidden="true" className="relative mt-4 h-[100px] w-[168px] shrink-0">
-      {/* ขาป้ายสองข้าง — origin-top ให้ปลายล่างกางออก และเริ่มสูงกว่าขอบกระดานเพื่อซุกไว้ข้างหลัง ไม่ลอย */}
-      <span className="absolute left-[48px] top-[46px] h-[40px] w-[8px] origin-top -rotate-[16deg] rounded-[2px] bg-[#B45309]" />
-      <span className="absolute right-[48px] top-[46px] h-[40px] w-[8px] origin-top rotate-[16deg] rounded-[2px] bg-[#B45309]" />
+    <div aria-hidden="true" className="relative h-[104px] w-[96px] shrink-0">
+      {/* เสาเดียวตรงกลาง ตั้งตรง — ยาวจนสุดกล่องเพื่อให้ตีนเสาอยู่ระดับเดียวกับตีนผี
+          (ประกาศก่อนกระดานจึงอยู่ชั้นล่าง ซุกหลังป้ายพอดี) */}
+      <span className="absolute left-1/2 top-[46px] h-[52px] w-[7px] -translate-x-1/2 rounded-[2px] bg-[#B45309]" />
 
       {/* กระดานป้าย */}
-      <div className="absolute left-1/2 top-0 w-[168px] -translate-x-1/2 overflow-hidden rounded-xl border-[3px] border-[#B45309] bg-amber-50 shadow-[0_6px_14px_rgba(180,83,9,.22)]">
-        <span className="block h-2.5 w-full" style={{ backgroundImage: STRIPES }} />
-        <p className="px-2 py-2 text-center font-heading text-[13px] font-bold leading-tight text-[#78350F]">
-          ⚠ กำลังก่อสร้าง
+      <div className="absolute left-1/2 top-0 w-[96px] -translate-x-1/2 overflow-hidden rounded-lg border-[3px] border-[#B45309] bg-amber-50 shadow-[0_5px_12px_rgba(180,83,9,.22)]">
+        <span className="block h-2 w-full" style={{ backgroundImage: STRIPES }} />
+        <p className="px-1.5 py-1.5 text-center font-heading text-[11px] font-bold leading-tight text-[#78350F]">
+          ⚠ กำลัง<br />ก่อสร้าง
         </p>
-        <span className="block h-2.5 w-full" style={{ backgroundImage: STRIPES }} />
+        <span className="block h-2 w-full" style={{ backgroundImage: STRIPES }} />
       </div>
 
       {/* เงาที่พื้น */}
-      <span className="absolute bottom-[6px] left-1/2 h-[8px] w-[120px] -translate-x-1/2 rounded-[50%] bg-[#831843]/10" />
+      <span className="absolute bottom-[1px] left-1/2 h-[6px] w-[44px] -translate-x-1/2 rounded-[50%] bg-[#831843]/12" />
     </div>
   );
 }
@@ -824,11 +824,14 @@ export default function ExamPlanPage({
   if (notReady) {
     return (
       <div className="flex min-h-full flex-col items-center justify-center px-8 pb-12 pt-6 text-center font-body text-[#831843]">
-        <GhostMascot mood="building" className="scale-75" />
+        {/* ผีกับป้ายยืนอยู่บนเส้นพื้นเดียวกัน — items-end + origin-bottom กันไม่ให้ผีลอยสูงกว่าป้าย
+            (GhostMascot ย่อด้วย h-/w- ไม่ได้ ต้องใช้ scale เท่านั้น) */}
+        <div className="flex items-end justify-center gap-1">
+          <GhostMascot mood="building" className="origin-bottom scale-[.68]" />
+          <ConstructionSign />
+        </div>
 
-        <ConstructionSign />
-
-        <h1 className="mt-5 font-heading text-xl font-bold">แผนอ่านสอบ</h1>
+        <h1 className="mt-4 font-heading text-xl font-bold">แผนอ่านสอบ</h1>
         <p className="mt-2 max-w-[300px] text-sm leading-relaxed text-[#9D5C7C]">
           บอกแค่วันสอบกับบทที่ต้องอ่าน แล้วให้ลุยเควสจัดตารางอ่านให้เอง
         </p>
