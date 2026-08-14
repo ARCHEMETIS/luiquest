@@ -12,6 +12,31 @@ const PRIMARY_BUTTON = "rounded-full bg-gradient-to-r from-violet-500 to-pink-50
 const SECONDARY_BUTTON = "rounded-full border-2 border-[#FBCFE8] bg-white/80 px-4 py-2 font-heading text-xs font-bold text-[#831843] transition hover:border-[#8B5CF6]/50 hover:text-[#8B5CF6] active:translate-y-px disabled:cursor-not-allowed disabled:opacity-50";
 const FIELD_CLASS = "mt-1.5 w-full min-w-0 rounded-2xl border-2 border-[#FBCFE8] bg-white/90 px-3.5 py-2.5 text-sm text-[#831843] outline-none transition placeholder:text-[#9D5C7C]/60 focus:border-[#8B5CF6]/60 focus:ring-2 focus:ring-[#8B5CF6]/10";
 
+// ป้ายเตือนแบบตั้งพื้น (A-frame) สำหรับหน้าฟีเจอร์ที่ยังไม่เปิด — ขาสองข้างกางออกและมีเงาที่พื้น
+// ให้ดูเหมือนป้ายจริงที่วางขวางไว้ ไม่ใช่แบนเนอร์ที่ลอยอยู่
+function ConstructionSign() {
+  const STRIPES = 'repeating-linear-gradient(45deg, #FBBF24 0 7px, #78350F 7px 14px)';
+  return (
+    <div aria-hidden="true" className="relative mt-4 h-[100px] w-[168px] shrink-0">
+      {/* ขาป้ายสองข้าง — origin-top ให้ปลายล่างกางออก และเริ่มสูงกว่าขอบกระดานเพื่อซุกไว้ข้างหลัง ไม่ลอย */}
+      <span className="absolute left-[48px] top-[46px] h-[40px] w-[8px] origin-top -rotate-[16deg] rounded-[2px] bg-[#B45309]" />
+      <span className="absolute right-[48px] top-[46px] h-[40px] w-[8px] origin-top rotate-[16deg] rounded-[2px] bg-[#B45309]" />
+
+      {/* กระดานป้าย */}
+      <div className="absolute left-1/2 top-0 w-[168px] -translate-x-1/2 overflow-hidden rounded-xl border-[3px] border-[#B45309] bg-amber-50 shadow-[0_6px_14px_rgba(180,83,9,.22)]">
+        <span className="block h-2.5 w-full" style={{ backgroundImage: STRIPES }} />
+        <p className="px-2 py-2 text-center font-heading text-[13px] font-bold leading-tight text-[#78350F]">
+          ⚠ กำลังก่อสร้าง
+        </p>
+        <span className="block h-2.5 w-full" style={{ backgroundImage: STRIPES }} />
+      </div>
+
+      {/* เงาที่พื้น */}
+      <span className="absolute bottom-[6px] left-1/2 h-[8px] w-[120px] -translate-x-1/2 rounded-[50%] bg-[#831843]/10" />
+    </div>
+  );
+}
+
 const BADGE_STYLE = {
   today: "border-violet-200 bg-violet-50 text-[#8B5CF6]",
   upcoming: "border-pink-200 bg-pink-50 text-[#9D5C7C]",
@@ -801,17 +826,9 @@ export default function ExamPlanPage({
       <div className="flex min-h-full flex-col items-center justify-center px-8 pb-12 pt-6 text-center font-body text-[#831843]">
         <GhostMascot mood="building" className="scale-75" />
 
-        {/* เทปกั้นเขตก่อสร้าง — บอกสถานะด้วยภาพก่อนอ่านตัวอักษร */}
-        <div
-          aria-hidden="true"
-          className="mt-3 h-2.5 w-full max-w-[320px] rounded-full border border-amber-300"
-          style={{ backgroundImage: 'repeating-linear-gradient(45deg, #FBBF24 0 7px, #78350F 7px 14px)' }}
-        />
+        <ConstructionSign />
 
-        <span className="mt-3 rounded-full border border-amber-300 bg-amber-50 px-3 py-1 text-[11px] font-bold text-amber-700">
-          ⚠ กำลังก่อสร้าง — เปิดเร็ว ๆ นี้
-        </span>
-        <h1 className="mt-3 font-heading text-xl font-bold">แผนอ่านสอบ</h1>
+        <h1 className="mt-5 font-heading text-xl font-bold">แผนอ่านสอบ</h1>
         <p className="mt-2 max-w-[300px] text-sm leading-relaxed text-[#9D5C7C]">
           บอกแค่วันสอบกับบทที่ต้องอ่าน แล้วให้ลุยเควสจัดตารางอ่านให้เอง
         </p>

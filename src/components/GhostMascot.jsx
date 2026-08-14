@@ -276,17 +276,20 @@ export default function GhostMascot({ celebrate = false, mood, className = "" })
       {/* กำลังสร้าง: หมวกวิศวะ + ค้อนพิกเซลตอกลงซ้ำ ๆ + ประกายไฟกระเด็น */}
       {activeMood === "building" && (
         <>
-          {/* หมวกเซฟตี้ — ใช้ animation เดียวกับตัวผี จะได้ขยับพร้อมกันไม่หลุดจากหัว */}
+          {/* หมวกเซฟตี้ใบใหญ่ ครอบลงมาถึงเหนือตา — inset-0 ให้พิกัดลูกอิงกล่องตัวผีทั้งใบ
+              และใส่ animation เดียวกับตัวผี จะได้ขยับพร้อมกันไม่หลุดจากหัว */}
           <span
-            className="pointer-events-none absolute -top-2 left-1/2 -translate-x-1/2"
+            className="pointer-events-none absolute inset-0"
             style={{ animation: "ghost-build 1.2s steps(2) infinite" }}
           >
             {/* โดม */}
-            <span className="absolute -top-[9px] left-1/2 h-3.5 w-11 -translate-x-1/2 rounded-t-[14px] bg-[#FBBF24]" />
+            <span className="absolute -top-[10px] left-1/2 h-[32px] w-[64px] -translate-x-1/2 rounded-t-[30px] bg-[#FBBF24]" />
             {/* สันกลางหมวก */}
-            <span className="absolute -top-[9px] left-1/2 h-3.5 w-2 -translate-x-1/2 rounded-t-[6px] bg-[#F59E0B]" />
-            {/* ปีกหมวก */}
-            <span className="absolute top-[5px] left-1/2 h-[6px] w-[62px] -translate-x-1/2 rounded-[3px] bg-[#F59E0B]" />
+            <span className="absolute -top-[10px] left-1/2 h-[32px] w-[11px] -translate-x-1/2 rounded-t-[6px] bg-[#F59E0B]" />
+            {/* ปีกหมวก — กว้างเกินหัวเล็กน้อยให้ดูครอบจริง */}
+            <span className="absolute top-[19px] left-1/2 h-[10px] w-[88px] -translate-x-1/2 rounded-[5px] bg-[#F59E0B]" />
+            {/* เงาใต้ปีกหมวกที่ทาบลงบนหัวผี */}
+            <span className="absolute top-[29px] left-1/2 h-[4px] w-[72px] -translate-x-1/2 rounded-b-[4px] bg-[#B45309]/30" />
           </span>
 
           {/* ค้อน = ด้ามยาว + หัวค้อนสี่เหลี่ยม หมุนรอบจุดหมุนที่ปลายด้าม (มือผี) */}
