@@ -8,6 +8,7 @@ import Coach from './pages/Coach.jsx';
 import Leaderboard from './pages/Leaderboard.jsx';
 import Premium from './pages/Premium.jsx';
 import Profile from './pages/Profile.jsx';
+import Feedback from './pages/Feedback.jsx';
 import Stats from './pages/Stats.jsx';
 import AppShellLayout from './components/AppShellLayout.jsx';
 import { AuthProvider, useAuth } from './hooks/useAuth.jsx';
@@ -69,6 +70,15 @@ function AppRoutes() {
         element={
           <RequireAuth>
             <Profile />
+          </RequireAuth>
+        }
+      />
+      {/* หน้าส่งความเห็น — อยู่นอกเชลล์เหมือน /profile: มีปุ่มกลับของตัวเอง และไม่มีแท็บไหนใน bottom nav ที่ควรไฮไลต์ */}
+      <Route
+        path="/feedback"
+        element={
+          <RequireAuth>
+            <Feedback />
           </RequireAuth>
         }
       />

@@ -284,6 +284,9 @@ export default function StatsPage({ stats, growth, loading = false, error = null
         questsCompleted: stats.quests_completed_total ?? 0,
         maxStreak: stats.max_streak ?? 0,
         avgStreak: Math.round(stats.avg_active_streak ?? 0),
+        feedbackTotal: stats.feedback_total ?? 0,
+        // คะแนนเฉลี่ยเป็นทศนิยม — ห้ามส่งเข้า StatTile เพราะ useCountUp ปัดเป็นจำนวนเต็ม (Math.round) 4.3 จะกลายเป็น 4
+        feedbackAvg: Number(stats.feedback_avg_rating ?? 0),
         growth: (() => {
           const vals = (growth ?? []).map((g) => Number(g.cumulative_users) || 0);
           return vals.length >= 2 ? vals : [0, signups]; // ต้องมี ≥2 จุด (GrowthChart กันหารศูนย์เองด้วย Math.max(...,1) ตอน scaling) — ค่าจริง ไม่ปั้น
@@ -431,6 +434,33 @@ export default function StatsPage({ stats, growth, loading = false, error = null
             <StatTile icon="fire" label="streak สูงสุด" value={data.maxStreak} suffix="วัน" delay={400} accent />
             <StatTile icon="sparkles" label="streak เฉลี่ย" value={data.avgStreak} suffix="วัน" delay={450} />
           </div>
+
+          {/* ความพึงพอใจจากผู้ใช้จริง — ขึ้นเฉพาะตอนมีคนส่งแล้ว การ์ด "0 ความเห็น" ไม่ได้บอกอะไรใคร
+              โชว์ได้แค่ตัวเลขรวม ห้ามมีข้อความหรือตัวตนคนเขียน (view public_stats คืนมาแค่ count กับ avg อยู่แล้ว) */}
+          {data.feedbackTotal > 0 && (
+            <div
+              className="flex items-center gap-3 rounded-2xl border-2 border-[#FBCFE8] bg-white/70 px-4 py-3"
+              style={{ animation: "stats-pop .4s ease-out both", animationDelay: "500ms" }}
+            >
+              <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-amber-100 text-xl">
+                ⭐
+              </span>
+              <div className="min-w-0 flex-1">
+                <p className="text-[10px] font-bold uppercase tracking-wide text-[#9D5C7C]">
+                  ความพึงพอใจจากผู้ใช้จริง
+                </p>
+                <p className="mt-0.5 flex items-baseline gap-1">
+                  <span className="font-heading text-xl font-bold text-[#831843]" style={{ fontVariantNumeric: "tabular-nums" }}>
+                    {data.feedbackAvg.toFixed(1)}
+                  </span>
+                  <span className="text-[11px] text-[#9D5C7C]">/ 5</span>
+                  <span className="text-[10px] text-[#9D5C7C]">
+                    · จาก {data.feedbackTotal.toLocaleString()} ความเห็น
+                  </span>
+                </p>
+              </div>
+            </div>
+          )}
 
           {/* แบรนด์ + CTA — social proof มาก่อน ค่อยชวนสมัครปิดท้าย */}
           <div
