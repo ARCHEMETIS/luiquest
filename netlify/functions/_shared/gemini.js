@@ -8,6 +8,8 @@
 //   generateJSON({ prompt, systemInstruction, chain, schema, temperature })  -> object (parsed JSON)
 //   QUEST_JSON_SCHEMA / ROADMAP_JSON_SCHEMA / QUEST_CONTINUATION_JSON_SCHEMA — schema เควส/roadmap ใช้ร่วมกันทั้งสร้างใหม่และต่อยอด
 
+import { callKkuOnce, isKkuModel, kkuApiKey } from './kkuGateway.js';
+
 function env(name) {
   return typeof Netlify !== 'undefined' ? Netlify.env.get(name) : process.env[name];
 }
@@ -34,8 +36,23 @@ const GEMINI_API_KEY = env('GEMINI_API_KEY');
 //   → เอา 3.1-flash-lite (15 RPM) ขึ้นนำ: 15 คนแรก/นาที ได้ทันทีใน ~4 วิ (จับเวลาจริง 14 ส.ค. = 3.9 วิ)
 //     เหลือคนที่ 16+ เท่านั้นที่ต้องไหลลง 2.5-flash/3.5-flash ซึ่งยังว่างอยู่
 //   แลกมาด้วยคุณภาพ roadmap ที่ลดลงเล็กน้อย — **หลังงานนำเสนอ ถ้าอยากได้คุณภาพคืน สลับสองตัวแรกกลับ**
-export const QUEST_MODEL_CHAIN = ['gemini-3.1-flash-lite', 'gemini-2.5-flash', 'gemini-3.5-flash'];
-export const CHAT_MODEL_CHAIN = ['gemini-3.1-flash-lite', 'gemini-2.5-flash-lite', 'gemini-2.5-flash'];
+//
+// อัพเดต 18 ก.ย. 2026 — **เอาเกตเวย์ มข. (KKU IntelSphere) ขึ้นนำทั้งสอง chain**
+//   ของ Google จำกัดที่ "จำนวนครั้ง" (ดีที่สุดคือ 15 RPM / 500 RPD ทั้งแอพ) ⇒ เป็นคอขวดตอนคนเข้าพร้อมกัน
+//   เกตเวย์ มข. จำกัดที่ "โทเคน/วัน" และแยกสระตามค่าย ⇒ เอามารับ burst แทน แล้วให้ของ Google เป็นก้นถัง
+//   สระที่ใช้: Gemini 350k/วัน -> Meta AI 200k/วัน (ทั้งคู่ไม่ใช่สระเดียวกับ Claude ที่เจ้าของใช้ Claude Code อยู่)
+//   เทสจริง 18 ก.ย.: kku:gemini-3.5-flash-lite คืน JSON สะอาด finish_reason=stop ใช้ 42 completion token
+//                    kku:llama-4-scout ก็คืน JSON ตรงรูป ส่วน deepseek/qwen เป็นสาย reasoning
+//                    (เทโทเคนลง field reasoning จน content ว่าง) จงใจไม่เอาเข้า chain
+export const QUEST_MODEL_CHAIN = ['kku:gemini-3.5-flash-lite', 'kku:llama-4-scout', 'gemini-3.1-flash-lite', 'gemini-2.5-flash'];
+export const CHAT_MODEL_CHAIN = ['kku:gemini-3.5-flash-lite', 'kku:llama-4-scout', 'gemini-3.1-flash-lite', 'gemini-2.5-flash-lite'];
+
+// chain เดินได้ถ้ามีคีย์อย่างน้อยหนึ่งฝั่ง — ตัวที่ไม่มีคีย์จะล้มตอนถูกเรียกแล้ว tryChain ข้ามไปเอง
+function assertSomeProviderKey() {
+  if (!GEMINI_API_KEY && !kkuApiKey()) {
+    throw new Error('ยังไม่ได้ตั้งคีย์ AI เลยสักตัว (ต้องมี KKU_API_KEY หรือ GEMINI_API_KEY อย่างน้อยหนึ่งอัน)');
+  }
+}
 
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -85,6 +102,12 @@ async function callGeminiOnce(model, { contents, systemInstruction, generationCo
   return res.json();
 }
 
+// ตัวสลับราง: ชื่อโมเดลขึ้นต้นด้วย `kku:` วิ่งเกตเวย์ มข. นอกนั้นวิ่ง Google ตรง
+// ทั้งสองทางรับ body ทรงเดียวกันและคืน response ทรงเดียวกัน ⇒ tryChain/extractFn ไม่ต้องรู้เรื่องนี้เลย
+async function callModelOnce(model, body) {
+  return isKkuModel(model) ? callKkuOnce(model, body) : callGeminiOnce(model, body);
+}
+
 // ไล่ chain ทีละโมเดล: 429 per-minute (RPM) retry โมเดลเดิม 1 ครั้งด้วย backoff+jitter ก่อนไปโมเดลถัดไป;
 // 429 per-day (RPD) หรือ non-2xx อื่น ๆ ข้ามไปโมเดลถัดไปทันที ไม่ retry; extractFn ล้มเหลว (เช่น parse JSON พัง)
 // ก็ถือเป็นความล้มเหลวของโมเดลนั้น ข้ามไปโมเดลถัดไปเช่นกัน (ไม่ retry โมเดลเดิมซ้ำ)
@@ -96,7 +119,7 @@ async function tryChain(chain, requestBody, extractFn) {
     const body = typeof requestBody === 'function' ? requestBody(model) : requestBody;
     for (let attempt = 1; attempt <= 2; attempt++) {
       try {
-        const data = await callGeminiOnce(model, body);
+        const data = await callModelOnce(model, body);
         try {
           return extractFn(data);
         } catch (parseErr) {
@@ -136,7 +159,7 @@ function minimalThinkingConfig(model) {
 // ---------- generateText: ข้อความล้วน (ใช้กับแชท) ----------
 // history (ถ้ามี) = [{ role: 'user' | 'model', text }] เรียงเก่า -> ใหม่ ต่อท้ายด้วย prompt เป็นข้อความล่าสุด
 export async function generateText({ prompt, systemInstruction, chain = CHAT_MODEL_CHAIN, temperature = 0.7, history = [] }) {
-  if (!GEMINI_API_KEY) throw new Error('ยังไม่ได้ตั้ง GEMINI_API_KEY');
+  assertSomeProviderKey();
 
   const contents = [
     ...history.map((h) => ({ role: h.role === 'model' ? 'model' : 'user', parts: [{ text: String(h.text ?? '') }] })),
@@ -163,7 +186,7 @@ export async function generateText({ prompt, systemInstruction, chain = CHAT_MOD
 
 // ---------- generateJSON: structured output (ใช้กับ roadmap/เควส) ----------
 export async function generateJSON({ prompt, systemInstruction, chain = QUEST_MODEL_CHAIN, schema, temperature = 0.9 }) {
-  if (!GEMINI_API_KEY) throw new Error('ยังไม่ได้ตั้ง GEMINI_API_KEY');
+  assertSomeProviderKey();
 
   const contents = [{ role: 'user', parts: [{ text: String(prompt ?? '') }] }];
 
