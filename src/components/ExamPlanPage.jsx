@@ -499,11 +499,13 @@ const PLAN_COLORS = [
 ];
 const planColor = (index) => PLAN_COLORS[index % PLAN_COLORS.length];
 
-// เกณฑ์ "วันแน่น" — รวมทุกวิชาในวันเดียว
-// 120 นาทีคือจุดที่นักศึกษาส่วนใหญ่เริ่มไม่ทำตามแผน, 180 คือแทบไม่มีทางทำครบหลังเลิกเรียน
-// ตัวเลขนี้เป็นสัญญาณเตือนให้คนไปกดย้ายวันเอง ไม่ได้ไปบังคับอะไรในระบบ
-const HEAVY_MINUTES = 120;
-const OVERLOADED_MINUTES = 180;
+// เกณฑ์ "วันแน่น" — เทียบกับ **เวลาที่ผู้ใช้ตั้งไว้เอง** ไม่ใช่ตัวเลขที่เราคิดขึ้นมา
+// ทุกแผนมี minutes_per_day ที่เจ้าตัวกรอกว่าวันหนึ่งอ่านไหวกี่นาที ⇒ เพดานของวันนั้น
+// คือผลรวมของวิชาที่ลงวันนั้น เกินเมื่อไหร่แปลว่าเกินที่ตัวเองบอกว่าไหว
+// (ไฟล์นี้ตัดสิน "แน่นเกิน" ด้วยค่านี้อยู่แล้วสองที่ — FitBadge และ required_minutes_per_day)
+// เลขตายตัวใช้ไม่ได้: คนตั้ง 30 นาที 3 วิชา = 90 นาทีก็เกินตัวแล้ว ส่วนคนตั้ง 150 นาที/วัน
+// จะโดนเตือนทุกวันทั้งที่แผนพอดีเป๊ะ
+const OVERLOAD_RATIO = 1.5; // เกินเพดานตัวเองเกินครึ่ง = แดง
 
 const WEEKDAY_LABELS = ["อา", "จ", "อ", "พ", "พฤ", "ศ", "ส"];
 
@@ -521,19 +523,27 @@ function shiftMonth(anchor, amount) {
 function buildCalendarIndex(plans) {
   const byDate = new Map();
   const touch = (date) => {
-    if (!byDate.has(date)) byDate.set(date, { study: [], exams: [], minutes: 0 });
+    if (!byDate.has(date)) byDate.set(date, { study: [], exams: [], minutes: 0, capacity: 0, planIds: new Set() });
     return byDate.get(date);
   };
 
   plans.forEach((plan, planIndex) => {
-    sortedItems(plan).forEach((item) => {
+    // ไม่ต้อง sortedItems: ปฏิทินจัดกลุ่มตามวันที่อยู่แล้ว ลำดับไม่มีผล — เลี่ยงการ copy+sort ทุกแผนทุกครั้งที่สร้างดัชนี
+    (Array.isArray(plan?.items) ? plan.items : []).forEach((item) => {
       if (!DATE_ONLY.test(item.scheduled_date || "")) return;
       const allocations = itemAllocations(plan, item);
       const minutes = allocations.reduce((sum, a) => sum + a.minutes, 0);
       const cell = touch(item.scheduled_date);
       cell.study.push({ plan, planIndex, item, allocations, minutes });
       // วันที่ทำไปแล้ว/ข้ามแล้วไม่นับเป็นภาระที่เหลือ — ไม่งั้นอาทิตย์ที่ผ่านมาก็ยังแดงค้างอยู่
-      if (item.status === "scheduled") cell.minutes += minutes;
+      if (item.status === "scheduled") {
+        cell.minutes += minutes;
+        // เพดานของวันนี้ = ผลรวมเวลาที่เจ้าตัวตั้งไว้ของ "วิชาที่ลงวันนี้" นับวิชาละครั้งเดียว
+        if (!cell.planIds.has(plan.id)) {
+          cell.planIds.add(plan.id);
+          cell.capacity += Number(plan.minutes_per_day) || 0;
+        }
+      }
     });
     if (DATE_ONLY.test(plan.exam_date || "")) touch(plan.exam_date).exams.push({ plan, planIndex });
   });
@@ -541,17 +551,47 @@ function buildCalendarIndex(plans) {
   return byDate;
 }
 
+// เกินเพดานที่ตัวเองตั้งไว้ไหม (ยังไม่มีอะไรลงวันนั้น = ไม่เกิน)
+function cellLoad(cell) {
+  if (!cell || cell.minutes === 0 || cell.capacity === 0) return "none";
+  if (cell.minutes > cell.capacity * OVERLOAD_RATIO) return "overloaded";
+  if (cell.minutes > cell.capacity) return "heavy";
+  return "ok";
+}
+
+// วันสอบกับวันแน่น **ซ้อนกันได้** และนั่นคือเคสที่แย่ที่สุดที่แท็บนี้มีไว้จับ
+// (สอบวิชาหนึ่ง + ต้องอ่านอีกวิชาอีกสองชั่วโมงในวันเดียวกัน)
+// ห้าม return สีวันสอบทิ้งไปก่อนเช็กภาระ ไม่งั้นวันนั้นจะหน้าตาเหมือนวันสอบธรรมดาจนหาไม่เจอ
 function dayTone(cell, isToday) {
-  if (cell?.exams?.length) return "border-[#8B5CF6] bg-violet-100";
-  if (!cell || cell.minutes === 0) return isToday ? "border-[#8B5CF6]/60 bg-white" : "border-transparent bg-white/60";
-  if (cell.minutes >= OVERLOADED_MINUTES) return "border-red-300 bg-red-50";
-  if (cell.minutes >= HEAVY_MINUTES) return "border-amber-300 bg-amber-50";
+  const load = cellLoad(cell);
+  const isExam = Boolean(cell?.exams?.length);
+
+  if (isExam) {
+    if (load === "overloaded") return "border-red-400 bg-red-100 ring-1 ring-inset ring-[#8B5CF6]";
+    if (load === "heavy") return "border-amber-400 bg-amber-100 ring-1 ring-inset ring-[#8B5CF6]";
+    return "border-[#8B5CF6] bg-violet-100";
+  }
+  if (load === "none") return isToday ? "border-[#8B5CF6]/60 bg-white" : "border-transparent bg-white/60";
+  if (load === "overloaded") return "border-red-300 bg-red-50";
+  if (load === "heavy") return "border-amber-300 bg-amber-50";
   return "border-[#FBCFE8] bg-white";
 }
 
 function CalendarTab({ plans, learningDate, onOpenPlan, onCreate }) {
   const [anchor, setAnchor] = useState(() => monthStart(learningDate || new Date().toISOString().slice(0, 10)));
   const [picked, setPicked] = useState(learningDate);
+
+  // เปลี่ยนเดือนแล้ววันที่เลือกต้องตามไปด้วย ไม่งั้นตารางไม่มีวันไหนถูกไฮไลต์เลย
+  // แต่แผงล่างยังโชว์วันของเดือนก่อน อ่านเหมือนว่าเดือนใหม่ว่างทั้งเดือน
+  const goMonth = (amount) => {
+    const next = shiftMonth(anchor, amount);
+    setAnchor(next);
+    setPicked((current) => {
+      if (String(current).slice(0, 7) === next.slice(0, 7)) return current;
+      // เด้งไปวันนี้ถ้าวันนี้อยู่ในเดือนที่เปิด ไม่งั้นไปวันที่ 1 ของเดือนนั้น
+      return String(learningDate).slice(0, 7) === next.slice(0, 7) ? learningDate : next;
+    });
+  };
 
   const index = useMemo(() => buildCalendarIndex(plans), [plans]);
 
@@ -579,14 +619,19 @@ function CalendarTab({ plans, learningDate, onOpenPlan, onCreate }) {
   }
 
   const pickedCell = index.get(picked);
-  const heavyDays = [...index.entries()].filter(([date, cell]) => date >= learningDate && cell.minutes >= HEAVY_MINUTES);
+  // เคยคำนวณใหม่ทุก render — ทุกครั้งที่แตะวันในตารางก็กาง Map ทั้งก้อนใหม่ฟรี ๆ
+  const heavyDays = useMemo(
+    () => [...index.entries()].filter(([date, cell]) => date >= learningDate && cellLoad(cell) !== "ok" && cellLoad(cell) !== "none"),
+    [index, learningDate]
+  );
 
   return (
     <div className="mt-4 flex flex-col gap-3">
       {/* สรุปก่อนเห็นตาราง — คนเปิดมาเพราะอยากรู้ว่า "มีปัญหาไหม" ไม่ใช่อยากดูตารางเปล่า ๆ */}
       {heavyDays.length > 0 && (
         <div className="rounded-2xl border-2 border-amber-200 bg-amber-50 px-3.5 py-2.5 text-[11px] leading-relaxed text-amber-800">
-          ⚠️ มี <span className="font-bold">{heavyDays.length} วัน</span> ที่รวมทุกวิชาแล้วเกิน {HEAVY_MINUTES / 60} ชั่วโมง
+          ⚠️ มี <span className="font-bold">{heavyDays.length} วัน</span> ที่รวมทุกวิชาแล้ว
+          <span className="font-bold">เกินเวลาที่ตั้งไว้เอง</span>
           {" — "}แตะวันนั้นดูได้ว่าชนกันวิชาไหน แล้วกด “ย้ายวัน” ในแท็บแยกตามวิชาเพื่อเกลี่ยใหม่
         </div>
       )}
@@ -596,7 +641,7 @@ function CalendarTab({ plans, learningDate, onOpenPlan, onCreate }) {
           <button
             type="button"
             aria-label="เดือนก่อนหน้า"
-            onClick={() => setAnchor((a) => shiftMonth(a, -1))}
+            onClick={() => goMonth(-1)}
             className="flex h-8 w-8 items-center justify-center rounded-full border border-[#FBCFE8] bg-white text-[#9D5C7C] transition hover:border-[#8B5CF6]/50 hover:text-[#8B5CF6] active:translate-y-px"
           >
             ‹
@@ -607,7 +652,7 @@ function CalendarTab({ plans, learningDate, onOpenPlan, onCreate }) {
           <button
             type="button"
             aria-label="เดือนถัดไป"
-            onClick={() => setAnchor((a) => shiftMonth(a, 1))}
+            onClick={() => goMonth(1)}
             className="flex h-8 w-8 items-center justify-center rounded-full border border-[#FBCFE8] bg-white text-[#9D5C7C] transition hover:border-[#8B5CF6]/50 hover:text-[#8B5CF6] active:translate-y-px"
           >
             ›
@@ -660,10 +705,10 @@ function CalendarTab({ plans, learningDate, onOpenPlan, onCreate }) {
         <div className="mt-2.5 flex flex-wrap items-center gap-x-3 gap-y-1 border-t border-[#FBCFE8] pt-2 text-[9px] text-[#9D5C7C]">
           <span className="inline-flex items-center gap-1">🎯 วันสอบ</span>
           <span className="inline-flex items-center gap-1">
-            <span className="h-2 w-2 rounded-sm border border-amber-300 bg-amber-50" /> เกิน {HEAVY_MINUTES / 60} ชม.
+            <span className="h-2 w-2 rounded-sm border border-amber-300 bg-amber-50" /> เกินเวลาที่ตั้งไว้
           </span>
           <span className="inline-flex items-center gap-1">
-            <span className="h-2 w-2 rounded-sm border border-red-300 bg-red-50" /> เกิน {OVERLOADED_MINUTES / 60} ชม.
+            <span className="h-2 w-2 rounded-sm border border-red-300 bg-red-50" /> เกินไปมาก
           </span>
         </div>
       </div>
@@ -691,8 +736,11 @@ function CalendarTab({ plans, learningDate, onOpenPlan, onCreate }) {
             {formatWeekday(picked)} • {formatDate(picked)}
           </h3>
           {pickedCell?.minutes > 0 && (
-            <span className={`text-[11px] font-bold ${pickedCell.minutes >= OVERLOADED_MINUTES ? "text-red-500" : pickedCell.minutes >= HEAVY_MINUTES ? "text-amber-600" : "text-[#9D5C7C]"}`}>
+            <span className={`text-[11px] font-bold ${cellLoad(pickedCell) === "overloaded" ? "text-red-500" : cellLoad(pickedCell) === "heavy" ? "text-amber-600" : "text-[#9D5C7C]"}`}>
               รวม {pickedCell.minutes} นาที
+              {pickedCell.capacity > 0 && (
+                <span className="font-normal text-[#9D5C7C]"> / ตั้งไว้ {pickedCell.capacity}</span>
+              )}
             </span>
           )}
         </div>

@@ -8,11 +8,8 @@
 //   generateJSON({ prompt, systemInstruction, chain, schema, temperature })  -> object (parsed JSON)
 //   QUEST_JSON_SCHEMA / ROADMAP_JSON_SCHEMA / QUEST_CONTINUATION_JSON_SCHEMA — schema เควส/roadmap ใช้ร่วมกันทั้งสร้างใหม่และต่อยอด
 
-import { callKkuOnce, isKkuModel, kkuApiKey } from './kkuGateway.js';
-
-function env(name) {
-  return typeof Netlify !== 'undefined' ? Netlify.env.get(name) : process.env[name];
-}
+import { env } from './env.js';
+import { callKkuOnce, isKkuModel, isPoolCoolingDown, kkuApiKey } from './kkuGateway.js';
 
 const GEMINI_API_KEY = env('GEMINI_API_KEY');
 
@@ -37,15 +34,58 @@ const GEMINI_API_KEY = env('GEMINI_API_KEY');
 //     เหลือคนที่ 16+ เท่านั้นที่ต้องไหลลง 2.5-flash/3.5-flash ซึ่งยังว่างอยู่
 //   แลกมาด้วยคุณภาพ roadmap ที่ลดลงเล็กน้อย — **หลังงานนำเสนอ ถ้าอยากได้คุณภาพคืน สลับสองตัวแรกกลับ**
 //
-// อัพเดต 18 ก.ย. 2026 — **เอาเกตเวย์ มข. (KKU IntelSphere) ขึ้นนำทั้งสอง chain**
+// อัพเดต 18 ก.ย. 2026 — **เอาเกตเวย์ มข. (KKU IntelSphere) ขึ้นนำ แล้วต่อสระสำรองให้ลึก**
 //   ของ Google จำกัดที่ "จำนวนครั้ง" (ดีที่สุดคือ 15 RPM / 500 RPD ทั้งแอพ) ⇒ เป็นคอขวดตอนคนเข้าพร้อมกัน
-//   เกตเวย์ มข. จำกัดที่ "โทเคน/วัน" และแยกสระตามค่าย ⇒ เอามารับ burst แทน แล้วให้ของ Google เป็นก้นถัง
-//   สระที่ใช้: Gemini 350k/วัน -> Meta AI 200k/วัน (ทั้งคู่ไม่ใช่สระเดียวกับ Claude ที่เจ้าของใช้ Claude Code อยู่)
-//   เทสจริง 18 ก.ย.: kku:gemini-3.5-flash-lite คืน JSON สะอาด finish_reason=stop ใช้ 42 completion token
-//                    kku:llama-4-scout ก็คืน JSON ตรงรูป ส่วน deepseek/qwen เป็นสาย reasoning
-//                    (เทโทเคนลง field reasoning จน content ว่าง) จงใจไม่เอาเข้า chain
-export const QUEST_MODEL_CHAIN = ['kku:gemini-3.5-flash-lite', 'kku:llama-4-scout', 'gemini-3.1-flash-lite', 'gemini-2.5-flash'];
-export const CHAT_MODEL_CHAIN = ['kku:gemini-3.5-flash-lite', 'kku:llama-4-scout', 'gemini-3.1-flash-lite', 'gemini-2.5-flash-lite'];
+//   เกตเวย์ มข. จำกัดที่ "โทเคน/วัน" และ**แยกสระตามค่าย** ⇒ ต่อหลายค่าย = กำลังสำรองเป็นล้านโทเคน/วัน
+//
+//   วัดจริงทุกตัวเมื่อ 18 ก.ย. 2026 (roadmap 3 เฟส, ดูสคริปต์ใน .scratch):
+//     kku:gemini-3.5-flash-lite  Gemini 350k   2.2s  JSON 10/10  reasoning 0
+//     kku:llama-4-maverick       Meta 200k     2.2s  JSON ok     reasoning 0
+//     kku:gpt-5.6-luna           OpenAI 200k   3.3s  JSON ok     reasoning 441 ตัวอักษร
+//     kku:mistral-small-2603     Mistral 100k  5.6s  JSON ok     reasoning 0
+//     kku:deepseek-v4-flash      Deepseek 1M  13.3s  JSON ok     reasoning 1870  ← ช้าสุดแต่สระใหญ่สุด
+//     kimi-k3 ไม่ตอบใน 25 วิ / qwen เทโทเคนลง reasoning จน content ว่าง ⇒ ทั้งคู่ไม่เอาเข้า chain
+//
+//   **เพดานเวลาของ Netlify คือ 60 วิ ไม่ใช่ 10 วิ** (เช็กเอกสารทางการ 18 ก.ย. 2026 — ค่าเก่าในคอมเมนต์
+//   ด้านบนตกรุ่นแล้ว และปรับไม่ได้) จึงมีที่ว่างให้ตัวช้าอย่าง deepseek ได้ทำงานจริง
+//   วางไว้ท้ายสุดเพื่อให้ปลอดภัยไม่ว่าเพดานจริงจะเป็นเท่าไหร่: กว่าจะถึงคิวมัน ตัวอื่นก็ล้มหมดแล้ว
+//   ผู้ใช้กำลังจะเจอ error อยู่แล้ว ⇒ "ช้า" ยังไงก็ชนะ "ล่ม" ตรงนั้น
+export const QUEST_MODEL_CHAIN = [
+  'kku:gemini-3.5-flash-lite',
+  'kku:llama-4-maverick',
+  'kku:gpt-5.6-luna',
+  'gemini-3.1-flash-lite',
+  'gemini-2.5-flash',
+  'kku:mistral-small-2603',
+  'kku:deepseek-v4-flash',
+];
+export const CHAT_MODEL_CHAIN = [
+  'kku:gemini-3.5-flash-lite',
+  'kku:llama-4-maverick',
+  'kku:gpt-5.6-luna',
+  'gemini-3.1-flash-lite',
+  'gemini-2.5-flash-lite',
+  'kku:mistral-small-2603',
+];
+
+// งานปั่นเควสกลางคืน (scheduled function เพดาน 30 วิ) — ไม่มีใครนั่งรอ ความช้าไม่สำคัญ
+// จงใจเอาสระใหญ่-ช้าขึ้นก่อน เพื่อ**เก็บสระเร็วไว้ให้ผู้ใช้ตอนกลางวัน**
+export const PREGEN_MODEL_CHAIN = [
+  'kku:deepseek-v4-flash',
+  'kku:nova-2-lite-v1',
+  'kku:mistral-small-2603',
+  'kku:gemini-3.5-flash-lite',
+  'gemini-3.1-flash-lite',
+];
+
+// งบเวลาต่อหนึ่งคำขอ: ต้องเผื่อให้ caller ได้ทำงาน DB ต่อและตอบกลับทัน
+// 20 วิ ปลอดภัยใต้เพดาน 60 วิของ Netlify และยังพอให้ deepseek (13.3 วิ) ได้ลองจริง
+export const LIVE_BUDGET_MS = 20_000;
+export const PREGEN_BUDGET_MS = 25_000;
+// เพดานต่อโมเดล: กันตัวเดียวกินงบทั้งก้อนจนตัวสำรองไม่ได้เกิด
+const PER_CALL_CAP_MS = 16_000;
+// เหลือน้อยกว่านี้ไม่ต้องเริ่มตัวใหม่ — เริ่มไปก็ไม่ทันจบ เสียโควตาเปล่า
+const MIN_ATTEMPT_MS = 1_500;
 
 // chain เดินได้ถ้ามีคีย์อย่างน้อยหนึ่งฝั่ง — ตัวที่ไม่มีคีย์จะล้มตอนถูกเรียกแล้ว tryChain ข้ามไปเอง
 function assertSomeProviderKey() {
@@ -78,7 +118,7 @@ function parseRateLimit(bodyText) {
   return { quotaType: isDay ? 'day' : 'minute' };
 }
 
-async function callGeminiOnce(model, { contents, systemInstruction, generationConfig }) {
+async function callGeminiOnce(model, { contents, systemInstruction, generationConfig }, { timeoutMs } = {}) {
   const res = await fetch(
     `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`,
     {
@@ -90,6 +130,7 @@ async function callGeminiOnce(model, { contents, systemInstruction, generationCo
         contents,
         generationConfig,
       }),
+      signal: timeoutMs ? AbortSignal.timeout(timeoutMs) : undefined,
     }
   );
   if (!res.ok) {
@@ -104,8 +145,8 @@ async function callGeminiOnce(model, { contents, systemInstruction, generationCo
 
 // ตัวสลับราง: ชื่อโมเดลขึ้นต้นด้วย `kku:` วิ่งเกตเวย์ มข. นอกนั้นวิ่ง Google ตรง
 // ทั้งสองทางรับ body ทรงเดียวกันและคืน response ทรงเดียวกัน ⇒ tryChain/extractFn ไม่ต้องรู้เรื่องนี้เลย
-async function callModelOnce(model, body) {
-  return isKkuModel(model) ? callKkuOnce(model, body) : callGeminiOnce(model, body);
+async function callModelOnce(model, body, options) {
+  return isKkuModel(model) ? callKkuOnce(model, body, options) : callGeminiOnce(model, body, options);
 }
 
 // ไล่ chain ทีละโมเดล: 429 per-minute (RPM) retry โมเดลเดิม 1 ครั้งด้วย backoff+jitter ก่อนไปโมเดลถัดไป;
@@ -113,13 +154,28 @@ async function callModelOnce(model, body) {
 // ก็ถือเป็นความล้มเหลวของโมเดลนั้น ข้ามไปโมเดลถัดไปเช่นกัน (ไม่ retry โมเดลเดิมซ้ำ)
 // ถ้าลอง "ทุกโมเดลในchain" หมดแล้วยังไม่สำเร็จ -> throw error ที่มี .exhausted = true ให้ caller ไป trigger fallback เอง
 // requestBody เป็น object ตรง ๆ หรือ function (model) => body สำหรับ config ที่ต่างกันตามรุ่นโมเดล (เช่น thinkingConfig)
-async function tryChain(chain, requestBody, extractFn) {
+async function tryChain(chain, requestBody, extractFn, { budgetMs = LIVE_BUDGET_MS } = {}) {
   let lastErr;
+  const deadline = Date.now() + budgetMs;
+
   for (const model of chain) {
+    // สระที่เพิ่งตอบว่าโควตาหมด/คีย์ผิด ข้ามไปเลย ไม่ต้องเสียเวลายิงไปโดนปฏิเสธซ้ำ
+    if (isKkuModel(model) && isPoolCoolingDown(model)) {
+      console.warn(`[ai] ข้าม ${model} — สระกำลังพักอยู่`);
+      continue;
+    }
+
+    const remaining = deadline - Date.now();
+    if (remaining < MIN_ATTEMPT_MS) {
+      console.warn(`[ai] เลิกไล่ chain ที่ ${model} — เหลืองบเวลา ${remaining}ms ไม่พอเริ่มตัวใหม่`);
+      break;
+    }
+    const timeoutMs = Math.min(PER_CALL_CAP_MS, remaining);
+
     const body = typeof requestBody === 'function' ? requestBody(model) : requestBody;
     for (let attempt = 1; attempt <= 2; attempt++) {
       try {
-        const data = await callModelOnce(model, body);
+        const data = await callModelOnce(model, body, { timeoutMs });
         try {
           return extractFn(data);
         } catch (parseErr) {
@@ -128,19 +184,28 @@ async function tryChain(chain, requestBody, extractFn) {
         }
       } catch (err) {
         lastErr = err;
-        const isRpmRetryable = err.status === 429 && err.rateLimited?.quotaType === 'minute' && attempt === 1;
+        const backoffMs = jitteredBackoffMs();
+        // retry ตัวเดิมได้เฉพาะตอนที่ยังมีงบพอทั้ง "นอนรอ" และ "ยิงใหม่" — ไม่งั้นเอางบไปให้ตัวถัดไปดีกว่า
+        const isRpmRetryable = err.status === 429
+          && err.rateLimited?.quotaType === 'minute'
+          && attempt === 1
+          && deadline - Date.now() > backoffMs + MIN_ATTEMPT_MS;
         if (isRpmRetryable) {
-          console.warn(`[gemini] ${model} RPM 429 — retry เดิม 1 ครั้งหลัง backoff`);
-          await sleep(jitteredBackoffMs());
+          console.warn(`[ai] ${model} RPM 429 — retry เดิม 1 ครั้งหลัง backoff`);
+          await sleep(backoffMs);
           continue; // retry โมเดลเดิมอีก 1 ครั้งเท่านั้น
         }
-        console.warn(`[gemini] ${model} ล้มเหลว (${err.status ?? 'no-status'}) — ไปโมเดลถัดไป: ${err.message}`);
+        console.warn(`[ai] ${model} ล้มเหลว (${err.kkuReason ?? err.status ?? 'no-status'}) — ไปโมเดลถัดไป: ${err.message}`);
         break; // RPD / non-429 / retry ครั้งที่ 2 ก็ยังพัง -> ไปโมเดลถัดไป
       }
     }
   }
-  console.error(`[gemini] chain หมดทุกโมเดล (${chain.join(' -> ')}): ${String(lastErr?.message || lastErr)}`);
-  const exhausted = new Error(`Gemini chain หมดทุกโมเดลแล้ว: ${String(lastErr?.message || lastErr)}`);
+  // lastErr ว่างได้จริงเมื่องบเวลาหมดตั้งแต่ยังไม่ได้ยิงตัวไหนเลย — อย่าปล่อยให้ log เป็น "undefined"
+  const why = lastErr?.message
+    ? String(lastErr.message)
+    : `งบเวลา ${budgetMs}ms หมดก่อนได้เริ่มยิงโมเดลไหนเลย`;
+  console.error(`[ai] chain หมดทุกโมเดล (${chain.join(' -> ')}): ${why}`);
+  const exhausted = new Error(`AI chain หมดทุกโมเดลแล้ว: ${why}`);
   exhausted.exhausted = true;
   exhausted.cause = lastErr;
   throw exhausted;
@@ -158,7 +223,7 @@ function minimalThinkingConfig(model) {
 
 // ---------- generateText: ข้อความล้วน (ใช้กับแชท) ----------
 // history (ถ้ามี) = [{ role: 'user' | 'model', text }] เรียงเก่า -> ใหม่ ต่อท้ายด้วย prompt เป็นข้อความล่าสุด
-export async function generateText({ prompt, systemInstruction, chain = CHAT_MODEL_CHAIN, temperature = 0.7, history = [] }) {
+export async function generateText({ prompt, systemInstruction, chain = CHAT_MODEL_CHAIN, temperature = 0.7, history = [], budgetMs }) {
   assertSomeProviderKey();
 
   const contents = [
@@ -178,14 +243,15 @@ export async function generateText({ prompt, systemInstruction, chain = CHAT_MOD
         ?.map((p) => p.text)
         .join('')
         .trim();
-      if (!text) throw new Error('Gemini ตอบข้อความว่างเปล่า');
+      if (!text) throw new Error('โมเดลตอบข้อความว่างเปล่า');
       return text;
-    }
+    },
+    { budgetMs }
   );
 }
 
 // ---------- generateJSON: structured output (ใช้กับ roadmap/เควส) ----------
-export async function generateJSON({ prompt, systemInstruction, chain = QUEST_MODEL_CHAIN, schema, temperature = 0.9 }) {
+export async function generateJSON({ prompt, systemInstruction, chain = QUEST_MODEL_CHAIN, schema, temperature = 0.9, budgetMs }) {
   assertSomeProviderKey();
 
   const contents = [{ role: 'user', parts: [{ text: String(prompt ?? '') }] }];
@@ -203,9 +269,10 @@ export async function generateJSON({ prompt, systemInstruction, chain = QUEST_MO
     },
     (data) => {
       const text = data?.candidates?.[0]?.content?.parts?.map((p) => p.text).join('') ?? '';
-      if (!text.trim()) throw new Error('Gemini ตอบ JSON ว่างเปล่า');
+      if (!text.trim()) throw new Error('โมเดลตอบ JSON ว่างเปล่า');
       return JSON.parse(text); // parse พังก็ throw ในนี้ -> tryChain ถือเป็นความล้มเหลวของโมเดลนี้ ไปตัวถัดไป
-    }
+    },
+    { budgetMs }
   );
 }
 

@@ -454,8 +454,10 @@ export default function StatsPage({ stats, growth, loading = false, error = null
                     {data.feedbackAvg.toFixed(1)}
                   </span>
                   <span className="text-[11px] text-[#9D5C7C]">/ 5</span>
+                  {/* นับ "คน" ไม่ใช่ "ครั้ง" — view นับ distinct user_id ให้แล้ว
+                      คนเดียวส่งได้วันละ 5 ครั้ง ถ้านับครั้งจะปั่นตัวเลขบนหน้าสาธารณะได้ */}
                   <span className="text-[10px] text-[#9D5C7C]">
-                    · จาก {data.feedbackTotal.toLocaleString()} ความเห็น
+                    · จาก {data.feedbackTotal.toLocaleString()} คน
                   </span>
                 </p>
               </div>

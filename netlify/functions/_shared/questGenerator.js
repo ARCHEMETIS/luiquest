@@ -696,7 +696,9 @@ async function tryStarterFallback(admin, { roadmap, dayNumber, phase, scheduledD
  *      phase    = แถว phases ที่เควสนี้อยู่ (อาจเป็น null ได้เฉพาะกรณี fallback แบบ static ที่หา/สร้าง phase ใหม่ไม่ได้)
  *  - ล้มเหลว (ไม่มี error object — ผู้เรียกควรข้าม roadmap นี้ไปคืนนี้ ไม่ throw): { failed: true }
  */
-export async function generateNextQuest(admin, { roadmap, dayNumber, scheduledDate = learningDayStr() }) {
+// chain/budget รับเข้ามาได้ เพราะงานกลางคืน (pre-generate) มีเพดานเวลา 30 วิและไม่มีใครนั่งรอ
+// จึงใช้สระใหญ่-ช้าได้ ต่างจาก request สดที่ต้องเอาสระเร็วก่อน — ดู PREGEN_MODEL_CHAIN ใน gemini.js
+export async function generateNextQuest(admin, { roadmap, dayNumber, scheduledDate = learningDayStr(), chain = QUEST_MODEL_CHAIN, budgetMs }) {
   const { data: phases } = await admin
     .from('phases')
     .select('id, roadmap_id, phase_number, title, description')
@@ -761,7 +763,8 @@ export async function generateNextQuest(admin, { roadmap, dayNumber, scheduledDa
         needsNewPhase: !existingPhase,
         targetPhaseNumber,
       }),
-      chain: QUEST_MODEL_CHAIN,
+      chain,
+      budgetMs,
       schema: QUEST_CONTINUATION_JSON_SCHEMA,
       temperature: 0.9,
     });

@@ -53,7 +53,13 @@ export default function Feedback() {
   const [notReady, setNotReady] = useState(false);
   const mounted = useRef(true);
 
-  useEffect(() => () => { mounted.current = false; }, []);
+  // ต้องตั้ง true ตอน mount ด้วย ไม่ใช่ตั้งแค่ครั้งเดียวตอนประกาศ ref:
+  // StrictMode (เปิดอยู่ที่ main.jsx) mount -> unmount -> mount ใหม่ ⇒ cleanup รอบแรกทำให้ค่าเป็น false ค้าง
+  // แล้วปุ่มส่งจะค้าง "กำลังส่ง…" ตลอดกาลทั้งที่แถวเข้า DB ไปแล้ว
+  useEffect(() => {
+    mounted.current = true;
+    return () => { mounted.current = false; };
+  }, []);
 
   // เข้าลิงก์ /feedback ตรง ๆ (ไม่มีประวัติให้ย้อน) ต้องไม่พาออกจากแอพ — ตกลงไปที่หน้าเควสแทน
   const goBack = () => (window.history.length > 1 ? navigate(-1) : navigate("/quest"));
@@ -62,6 +68,7 @@ export default function Feedback() {
     if (!user || !rating || sending) return;
     setSending(true);
     setError(null);
+    setNotReady(false);
 
     const trimmed = message.trim();
     // .select() ต่อท้ายเพื่อให้รู้ว่า RLS ปล่อยผ่านจริง — ถ้า policy ตีกลับจะได้ error ไม่ใช่เงียบ ๆ ผ่าน
@@ -128,18 +135,19 @@ export default function Feedback() {
       </header>
 
       <main className="mx-auto flex w-full max-w-md flex-1 flex-col gap-3 px-5 pb-10 pt-4 md:max-w-xl">
-        {notReady ? (
-          <div className={`${CARD} text-center`} style={{ animation: "fb-in .25s ease-out" }}>
-            <p className="text-4xl">🚧</p>
-            <h2 className="mt-2 font-heading text-[15px] font-bold">ช่องรับความเห็นกำลังจะเปิด</h2>
-            <p className="mt-1.5 text-[11px] leading-relaxed text-[#9D5C7C]">
-              หน้านี้พร้อมแล้ว รออีกนิดเดียวให้ฝั่งฐานข้อมูลเปิดรับ — กลับมากดใหม่ได้เลย
-            </p>
-            <button type="button" onClick={() => navigate("/quest")} className={`${PRIMARY_BTN} mt-4`}>
-              กลับไปลุยเควสต่อ
-            </button>
+        {/* ฟีเจอร์ยังไม่เปิดฝั่งฐานข้อมูล — ขึ้นเป็นแถบเตือน **เหนือฟอร์ม** ห้ามแทนที่ฟอร์ม
+            เพราะกว่าจะรู้ก็ตอนกดส่ง ซึ่งผู้ใช้พิมพ์ไปแล้วเป็นร้อยตัวอักษร ถ้าถอดฟอร์มทิ้งคือลบงานเขา */}
+        {notReady && (
+          <div
+            className="rounded-2xl border-2 border-amber-200 bg-amber-50 px-3.5 py-2.5 text-[11px] leading-relaxed text-amber-800"
+            style={{ animation: "fb-in .25s ease-out" }}
+          >
+            🚧 ช่องรับความเห็นยังไม่เปิดรับฝั่งฐานข้อมูล — <span className="font-bold">ข้อความที่พิมพ์ไว้ยังอยู่ครบ</span>{" "}
+            กดส่งใหม่อีกครั้งได้เลยเมื่อเปิดแล้ว
           </div>
-        ) : sent ? (
+        )}
+
+        {sent ? (
           <div className={`${CARD} text-center`} style={{ animation: "fb-in .25s ease-out" }}>
             <p className="text-4xl">🙏</p>
             <h2 className="mt-2 font-heading text-[15px] font-bold">ขอบคุณมากเลย!</h2>

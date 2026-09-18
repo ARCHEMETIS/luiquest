@@ -3,6 +3,7 @@
 // BATCH_SIZE = 1: Netlify free plan timeout 10 วิ — ให้ cron หลายรอบเป็นตัวเพิ่ม throughput
 import { getAdminClient } from './_shared/supabaseAdmin.js';
 import { generateNextQuest } from './_shared/questGenerator.js';
+import { PREGEN_MODEL_CHAIN, PREGEN_BUDGET_MS } from './_shared/gemini.js';
 import { nextLearningDayStr } from './_shared/datetime.js';
 
 const BATCH_SIZE = 1; // free plan timeout 10 วินาที — ใช้จำนวนรอบ cron เพิ่ม throughput แทนการทำหลายคิวต่อรอบ
@@ -111,6 +112,9 @@ export default async (req) => {
         roadmap: item.roadmap,
         dayNumber: item.dayNumber,
         scheduledDate: nextLearningDayStr(),
+        // งานกลางคืนใช้สระใหญ่-ช้าก่อน (deepseek 1M) เพื่อเก็บสระเร็วไว้ให้ผู้ใช้ตอนกลางวัน
+        chain: PREGEN_MODEL_CHAIN,
+        budgetMs: PREGEN_BUDGET_MS,
       });
       if (result?.failed) {
         failed += 1;
