@@ -7,6 +7,7 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 const THAI_WEEKDAY = new Intl.DateTimeFormat("th-TH", { weekday: "long", timeZone: "UTC" });
 const THAI_DATE = new Intl.DateTimeFormat("th-TH", { day: "numeric", month: "short", year: "numeric", timeZone: "UTC" });
 const THAI_SHORT_DATE = new Intl.DateTimeFormat("th-TH", { day: "numeric", month: "short", timeZone: "UTC" });
+const THAI_MONTH_YEAR = new Intl.DateTimeFormat("th-TH", { month: "long", year: "numeric", timeZone: "UTC" });
 
 const PRIMARY_BUTTON = "rounded-full bg-gradient-to-r from-violet-500 to-pink-500 px-4 py-2.5 font-heading text-sm font-bold text-white shadow-[0_10px_24px_rgba(139,92,246,.30)] transition hover:-translate-y-0.5 hover:shadow-[0_14px_30px_rgba(139,92,246,.42)] hover:brightness-105 active:translate-y-px disabled:cursor-not-allowed disabled:opacity-60";
 const SECONDARY_BUTTON = "rounded-full border-2 border-[#FBCFE8] bg-white/80 px-4 py-2 font-heading text-xs font-bold text-[#831843] transition hover:border-[#8B5CF6]/50 hover:text-[#8B5CF6] active:translate-y-px disabled:cursor-not-allowed disabled:opacity-50";
@@ -482,6 +483,257 @@ function DailyTab({
   );
 }
 
+// ---------- ปฏิทินรวมทุกวิชา ----------
+// มีไว้ตอบคำถามที่แท็บอื่นตอบไม่ได้: สอบหลายวิชาพร้อมกัน **วันไหนแน่นเกินจะไหว**
+// แท็บ "แยกตามวิชา" เห็นทีละวิชา, "แผนรายวัน" เห็นแค่วันนี้ — ทั้งคู่ไม่เห็นว่าวันพุธหน้า
+// มี 3 วิชาซ้อนกันรวม 3 ชั่วโมง ปฏิทินเลยต้องรวมทุกแผนไว้ในตารางเดียวเสมอ ไม่ตามตัวกรองวิชา
+
+// สีประจำวิชา ไล่ตามลำดับที่ list_exam_plans เรียงมา (exam_date -> created_at) ⇒ สีไม่สลับไปมาระหว่างโหลด
+const PLAN_COLORS = [
+  { dot: "bg-violet-500", chip: "border-violet-200 bg-violet-50 text-violet-700" },
+  { dot: "bg-pink-500", chip: "border-pink-200 bg-pink-50 text-pink-700" },
+  { dot: "bg-amber-500", chip: "border-amber-200 bg-amber-50 text-amber-700" },
+  { dot: "bg-sky-500", chip: "border-sky-200 bg-sky-50 text-sky-700" },
+  { dot: "bg-emerald-500", chip: "border-emerald-200 bg-emerald-50 text-emerald-700" },
+  { dot: "bg-fuchsia-500", chip: "border-fuchsia-200 bg-fuchsia-50 text-fuchsia-700" },
+];
+const planColor = (index) => PLAN_COLORS[index % PLAN_COLORS.length];
+
+// เกณฑ์ "วันแน่น" — รวมทุกวิชาในวันเดียว
+// 120 นาทีคือจุดที่นักศึกษาส่วนใหญ่เริ่มไม่ทำตามแผน, 180 คือแทบไม่มีทางทำครบหลังเลิกเรียน
+// ตัวเลขนี้เป็นสัญญาณเตือนให้คนไปกดย้ายวันเอง ไม่ได้ไปบังคับอะไรในระบบ
+const HEAVY_MINUTES = 120;
+const OVERLOADED_MINUTES = 180;
+
+const WEEKDAY_LABELS = ["อา", "จ", "อ", "พ", "พฤ", "ศ", "ส"];
+
+function monthStart(value) {
+  return `${String(value).slice(0, 7)}-01`;
+}
+
+function shiftMonth(anchor, amount) {
+  const [year, month] = anchor.split("-").map(Number);
+  const target = new Date(Date.UTC(year, month - 1 + amount, 1));
+  return target.toISOString().slice(0, 10);
+}
+
+// รวมทุกแผนเป็นดัชนีรายวัน: วันไหนมีอะไรบ้าง กี่นาที และวันไหนคือวันสอบ
+function buildCalendarIndex(plans) {
+  const byDate = new Map();
+  const touch = (date) => {
+    if (!byDate.has(date)) byDate.set(date, { study: [], exams: [], minutes: 0 });
+    return byDate.get(date);
+  };
+
+  plans.forEach((plan, planIndex) => {
+    sortedItems(plan).forEach((item) => {
+      if (!DATE_ONLY.test(item.scheduled_date || "")) return;
+      const allocations = itemAllocations(plan, item);
+      const minutes = allocations.reduce((sum, a) => sum + a.minutes, 0);
+      const cell = touch(item.scheduled_date);
+      cell.study.push({ plan, planIndex, item, allocations, minutes });
+      // วันที่ทำไปแล้ว/ข้ามแล้วไม่นับเป็นภาระที่เหลือ — ไม่งั้นอาทิตย์ที่ผ่านมาก็ยังแดงค้างอยู่
+      if (item.status === "scheduled") cell.minutes += minutes;
+    });
+    if (DATE_ONLY.test(plan.exam_date || "")) touch(plan.exam_date).exams.push({ plan, planIndex });
+  });
+
+  return byDate;
+}
+
+function dayTone(cell, isToday) {
+  if (cell?.exams?.length) return "border-[#8B5CF6] bg-violet-100";
+  if (!cell || cell.minutes === 0) return isToday ? "border-[#8B5CF6]/60 bg-white" : "border-transparent bg-white/60";
+  if (cell.minutes >= OVERLOADED_MINUTES) return "border-red-300 bg-red-50";
+  if (cell.minutes >= HEAVY_MINUTES) return "border-amber-300 bg-amber-50";
+  return "border-[#FBCFE8] bg-white";
+}
+
+function CalendarTab({ plans, learningDate, onOpenPlan, onCreate }) {
+  const [anchor, setAnchor] = useState(() => monthStart(learningDate || new Date().toISOString().slice(0, 10)));
+  const [picked, setPicked] = useState(learningDate);
+
+  const index = useMemo(() => buildCalendarIndex(plans), [plans]);
+
+  const cells = useMemo(() => {
+    const [year, month] = anchor.split("-").map(Number);
+    const firstWeekday = new Date(Date.UTC(year, month - 1, 1)).getUTCDay();
+    const daysInMonth = new Date(Date.UTC(year, month, 0)).getUTCDate();
+    const out = [];
+    for (let i = 0; i < firstWeekday; i += 1) out.push(null);
+    for (let day = 1; day <= daysInMonth; day += 1) {
+      out.push(`${anchor.slice(0, 8)}${String(day).padStart(2, "0")}`);
+    }
+    return out;
+  }, [anchor]);
+
+  if (plans.length === 0) {
+    return (
+      <EmptyState
+        title="ยังไม่มีแผนให้วางลงปฏิทิน"
+        copy="พอมีแผนสอบตั้งแต่สองวิชาขึ้นไป หน้านี้จะบอกได้ทันทีว่าวันไหนชนกันจนอ่านไม่ไหว"
+        actionLabel="สร้างแผนอ่านสอบ"
+        onAction={onCreate}
+      />
+    );
+  }
+
+  const pickedCell = index.get(picked);
+  const heavyDays = [...index.entries()].filter(([date, cell]) => date >= learningDate && cell.minutes >= HEAVY_MINUTES);
+
+  return (
+    <div className="mt-4 flex flex-col gap-3">
+      {/* สรุปก่อนเห็นตาราง — คนเปิดมาเพราะอยากรู้ว่า "มีปัญหาไหม" ไม่ใช่อยากดูตารางเปล่า ๆ */}
+      {heavyDays.length > 0 && (
+        <div className="rounded-2xl border-2 border-amber-200 bg-amber-50 px-3.5 py-2.5 text-[11px] leading-relaxed text-amber-800">
+          ⚠️ มี <span className="font-bold">{heavyDays.length} วัน</span> ที่รวมทุกวิชาแล้วเกิน {HEAVY_MINUTES / 60} ชั่วโมง
+          {" — "}แตะวันนั้นดูได้ว่าชนกันวิชาไหน แล้วกด “ย้ายวัน” ในแท็บแยกตามวิชาเพื่อเกลี่ยใหม่
+        </div>
+      )}
+
+      <div className="rounded-2xl border border-[#FBCFE8] bg-white/70 px-3 py-3">
+        <div className="flex items-center justify-between">
+          <button
+            type="button"
+            aria-label="เดือนก่อนหน้า"
+            onClick={() => setAnchor((a) => shiftMonth(a, -1))}
+            className="flex h-8 w-8 items-center justify-center rounded-full border border-[#FBCFE8] bg-white text-[#9D5C7C] transition hover:border-[#8B5CF6]/50 hover:text-[#8B5CF6] active:translate-y-px"
+          >
+            ‹
+          </button>
+          <p className="font-heading text-[13px] font-bold">
+            {THAI_MONTH_YEAR.format(new Date(dateTimestamp(anchor)))}
+          </p>
+          <button
+            type="button"
+            aria-label="เดือนถัดไป"
+            onClick={() => setAnchor((a) => shiftMonth(a, 1))}
+            className="flex h-8 w-8 items-center justify-center rounded-full border border-[#FBCFE8] bg-white text-[#9D5C7C] transition hover:border-[#8B5CF6]/50 hover:text-[#8B5CF6] active:translate-y-px"
+          >
+            ›
+          </button>
+        </div>
+
+        <div className="mt-2.5 grid grid-cols-7 gap-1 text-center">
+          {WEEKDAY_LABELS.map((label) => (
+            <span key={label} className="text-[9px] font-bold text-[#9D5C7C]">{label}</span>
+          ))}
+        </div>
+
+        <div className="mt-1 grid grid-cols-7 gap-1">
+          {cells.map((date, i) => {
+            if (!date) return <span key={`pad-${i}`} />;
+            const cell = index.get(date);
+            const isToday = date === learningDate;
+            const isPicked = date === picked;
+            const dots = (cell?.study ?? []).slice(0, 4);
+            return (
+              <button
+                key={date}
+                type="button"
+                onClick={() => setPicked(date)}
+                aria-pressed={isPicked}
+                aria-label={`${formatDate(date)}${cell?.exams?.length ? " วันสอบ" : ""}${cell?.minutes ? ` รวม ${cell.minutes} นาที` : ""}`}
+                className={`flex min-h-[46px] flex-col items-center gap-0.5 rounded-xl border-2 px-0.5 py-1 transition ${dayTone(cell, isToday)} ${
+                  isPicked ? "ring-2 ring-[#8B5CF6]/60" : ""
+                } ${isToday ? "font-bold" : ""}`}
+              >
+                <span className={`text-[11px] leading-none ${isToday ? "text-[#8B5CF6]" : "text-[#831843]"}`}>
+                  {Number(date.slice(8))}
+                </span>
+                {cell?.exams?.length > 0 && <span className="text-[9px] leading-none">🎯</span>}
+                {dots.length > 0 && (
+                  <span className="flex flex-wrap items-center justify-center gap-[2px]">
+                    {dots.map((entry, k) => (
+                      <span key={k} className={`h-1.5 w-1.5 rounded-full ${planColor(entry.planIndex).dot}`} />
+                    ))}
+                  </span>
+                )}
+                {cell?.minutes > 0 && (
+                  <span className="text-[8px] leading-none text-[#9D5C7C]">{cell.minutes}′</span>
+                )}
+              </button>
+            );
+          })}
+        </div>
+
+        <div className="mt-2.5 flex flex-wrap items-center gap-x-3 gap-y-1 border-t border-[#FBCFE8] pt-2 text-[9px] text-[#9D5C7C]">
+          <span className="inline-flex items-center gap-1">🎯 วันสอบ</span>
+          <span className="inline-flex items-center gap-1">
+            <span className="h-2 w-2 rounded-sm border border-amber-300 bg-amber-50" /> เกิน {HEAVY_MINUTES / 60} ชม.
+          </span>
+          <span className="inline-flex items-center gap-1">
+            <span className="h-2 w-2 rounded-sm border border-red-300 bg-red-50" /> เกิน {OVERLOADED_MINUTES / 60} ชม.
+          </span>
+        </div>
+      </div>
+
+      {/* ป้ายสี -> วิชา กดแล้วกระโดดไปหน้าวิชานั้น */}
+      <div className="flex flex-wrap gap-1.5">
+        {plans.map((plan, planIndex) => (
+          <button
+            key={plan.id}
+            type="button"
+            onClick={() => onOpenPlan(plan.id)}
+            className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[10px] font-bold transition hover:-translate-y-0.5 active:translate-y-px ${planColor(planIndex).chip}`}
+          >
+            <span className={`h-2 w-2 rounded-full ${planColor(planIndex).dot}`} />
+            <span className="max-w-[140px] truncate">{plan.title}</span>
+            <span className="opacity-70">สอบ {formatDate(plan.exam_date, true)}</span>
+          </button>
+        ))}
+      </div>
+
+      {/* รายละเอียดของวันที่เลือก — อ่านอย่างเดียว ปุ่มจัดการอยู่ในแท็บแยกตามวิชา ไม่ทำซ้ำสองที่ */}
+      <div className="rounded-2xl border border-[#FBCFE8] bg-white/70 px-4 py-3">
+        <div className="flex items-baseline justify-between gap-2">
+          <h3 className="font-heading text-[13px] font-bold">
+            {formatWeekday(picked)} • {formatDate(picked)}
+          </h3>
+          {pickedCell?.minutes > 0 && (
+            <span className={`text-[11px] font-bold ${pickedCell.minutes >= OVERLOADED_MINUTES ? "text-red-500" : pickedCell.minutes >= HEAVY_MINUTES ? "text-amber-600" : "text-[#9D5C7C]"}`}>
+              รวม {pickedCell.minutes} นาที
+            </span>
+          )}
+        </div>
+
+        {pickedCell?.exams?.map(({ plan, planIndex }) => (
+          <p key={`exam-${plan.id}`} className="mt-2 flex items-center gap-1.5 text-[12px] font-bold text-[#8B5CF6]">
+            <span className={`h-2 w-2 rounded-full ${planColor(planIndex).dot}`} />
+            🎯 สอบ {plan.title}
+          </p>
+        ))}
+
+        {!pickedCell?.study?.length && !pickedCell?.exams?.length ? (
+          <p className="mt-2 text-[11px] text-[#9D5C7C]">วันนี้ว่าง ไม่มีหัวข้อไหนลงไว้</p>
+        ) : (
+          pickedCell.study.map(({ plan, planIndex, item, allocations, minutes }) => (
+            <div key={item.id} className="mt-2.5 border-t border-[#FBCFE8]/70 pt-2 first:border-t-0">
+              <div className="flex items-center justify-between gap-2">
+                <span className="flex min-w-0 items-center gap-1.5">
+                  <span className={`h-2 w-2 shrink-0 rounded-full ${planColor(planIndex).dot}`} />
+                  <span className="truncate text-[12px] font-bold">{plan.title}</span>
+                </span>
+                <span className="shrink-0 text-[10px] text-[#9D5C7C]">
+                  {item.kind === "review" ? "ทบทวน" : "อ่านครั้งแรก"} • {minutes} นาที
+                </span>
+              </div>
+              <ul className="mt-1 space-y-0.5">
+                {allocations.map((a) => (
+                  <li key={a.topicIndex} className="flex items-baseline justify-between gap-2 text-[11px] text-[#9D5C7C]">
+                    <span className="min-w-0 truncate">{a.topic}</span>
+                    <span className="shrink-0">{a.minutes}′</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ))
+        )}
+      </div>
+    </div>
+  );
+}
+
 function CreatePlanForm({ learningDate, pending, canCancel, onCancel, onCreate, onCreated }) {
   const [title, setTitle] = useState("");
   const [examDate, setExamDate] = useState("");
@@ -870,6 +1122,7 @@ export default function ExamPlanPage({
 
   const tabs = [
     { id: "all", label: "ทั้งหมด" },
+    { id: "calendar", label: "ปฏิทิน" },
     { id: "subject", label: "แยกตามวิชา" },
     { id: "daily", label: "แผนรายวัน" },
   ];
@@ -911,7 +1164,7 @@ export default function ExamPlanPage({
           />
         )}
 
-        <nav aria-label="มุมมองแผนสอบ" className="mt-4 grid grid-cols-3 rounded-2xl border border-[#FBCFE8] bg-white/70 p-1">
+        <nav aria-label="มุมมองแผนสอบ" className="mt-4 grid grid-cols-4 rounded-2xl border border-[#FBCFE8] bg-white/70 p-1">
           {tabs.map((item) => (
             <button
               key={item.id}
@@ -933,6 +1186,14 @@ export default function ExamPlanPage({
             onOpenPlan={openPlan}
             onCreate={() => setShowCreate(true)}
             onArchive={setArchiveTarget}
+          />
+        )}
+        {tab === "calendar" && (
+          <CalendarTab
+            plans={selectablePlans}
+            learningDate={learningDate}
+            onOpenPlan={openPlan}
+            onCreate={() => setShowCreate(true)}
           />
         )}
         {tab === "subject" && (
