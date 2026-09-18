@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import GhostMascot from "./GhostMascot.jsx";
 import { buildExamSchedule } from "../lib/examSchedule.js";
+import { buildCalendarIndex, cellLoad, heavyDaysFrom } from "../lib/calendarLoad.js";
 
 const DATE_ONLY = /^\d{4}-\d{2}-\d{2}$/;
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -499,14 +500,6 @@ const PLAN_COLORS = [
 ];
 const planColor = (index) => PLAN_COLORS[index % PLAN_COLORS.length];
 
-// เกณฑ์ "วันแน่น" — เทียบกับ **เวลาที่ผู้ใช้ตั้งไว้เอง** ไม่ใช่ตัวเลขที่เราคิดขึ้นมา
-// ทุกแผนมี minutes_per_day ที่เจ้าตัวกรอกว่าวันหนึ่งอ่านไหวกี่นาที ⇒ เพดานของวันนั้น
-// คือผลรวมของวิชาที่ลงวันนั้น เกินเมื่อไหร่แปลว่าเกินที่ตัวเองบอกว่าไหว
-// (ไฟล์นี้ตัดสิน "แน่นเกิน" ด้วยค่านี้อยู่แล้วสองที่ — FitBadge และ required_minutes_per_day)
-// เลขตายตัวใช้ไม่ได้: คนตั้ง 30 นาที 3 วิชา = 90 นาทีก็เกินตัวแล้ว ส่วนคนตั้ง 150 นาที/วัน
-// จะโดนเตือนทุกวันทั้งที่แผนพอดีเป๊ะ
-const OVERLOAD_RATIO = 1.5; // เกินเพดานตัวเองเกินครึ่ง = แดง
-
 const WEEKDAY_LABELS = ["อา", "จ", "อ", "พ", "พฤ", "ศ", "ส"];
 
 function monthStart(value) {
@@ -517,46 +510,6 @@ function shiftMonth(anchor, amount) {
   const [year, month] = anchor.split("-").map(Number);
   const target = new Date(Date.UTC(year, month - 1 + amount, 1));
   return target.toISOString().slice(0, 10);
-}
-
-// รวมทุกแผนเป็นดัชนีรายวัน: วันไหนมีอะไรบ้าง กี่นาที และวันไหนคือวันสอบ
-function buildCalendarIndex(plans) {
-  const byDate = new Map();
-  const touch = (date) => {
-    if (!byDate.has(date)) byDate.set(date, { study: [], exams: [], minutes: 0, capacity: 0, planIds: new Set() });
-    return byDate.get(date);
-  };
-
-  plans.forEach((plan, planIndex) => {
-    // ไม่ต้อง sortedItems: ปฏิทินจัดกลุ่มตามวันที่อยู่แล้ว ลำดับไม่มีผล — เลี่ยงการ copy+sort ทุกแผนทุกครั้งที่สร้างดัชนี
-    (Array.isArray(plan?.items) ? plan.items : []).forEach((item) => {
-      if (!DATE_ONLY.test(item.scheduled_date || "")) return;
-      const allocations = itemAllocations(plan, item);
-      const minutes = allocations.reduce((sum, a) => sum + a.minutes, 0);
-      const cell = touch(item.scheduled_date);
-      cell.study.push({ plan, planIndex, item, allocations, minutes });
-      // วันที่ทำไปแล้ว/ข้ามแล้วไม่นับเป็นภาระที่เหลือ — ไม่งั้นอาทิตย์ที่ผ่านมาก็ยังแดงค้างอยู่
-      if (item.status === "scheduled") {
-        cell.minutes += minutes;
-        // เพดานของวันนี้ = ผลรวมเวลาที่เจ้าตัวตั้งไว้ของ "วิชาที่ลงวันนี้" นับวิชาละครั้งเดียว
-        if (!cell.planIds.has(plan.id)) {
-          cell.planIds.add(plan.id);
-          cell.capacity += Number(plan.minutes_per_day) || 0;
-        }
-      }
-    });
-    if (DATE_ONLY.test(plan.exam_date || "")) touch(plan.exam_date).exams.push({ plan, planIndex });
-  });
-
-  return byDate;
-}
-
-// เกินเพดานที่ตัวเองตั้งไว้ไหม (ยังไม่มีอะไรลงวันนั้น = ไม่เกิน)
-function cellLoad(cell) {
-  if (!cell || cell.minutes === 0 || cell.capacity === 0) return "none";
-  if (cell.minutes > cell.capacity * OVERLOAD_RATIO) return "overloaded";
-  if (cell.minutes > cell.capacity) return "heavy";
-  return "ok";
 }
 
 // วันสอบกับวันแน่น **ซ้อนกันได้** และนั่นคือเคสที่แย่ที่สุดที่แท็บนี้มีไว้จับ
@@ -593,7 +546,7 @@ function CalendarTab({ plans, learningDate, onOpenPlan, onCreate }) {
     });
   };
 
-  const index = useMemo(() => buildCalendarIndex(plans), [plans]);
+  const index = useMemo(() => buildCalendarIndex(plans, itemAllocations), [plans]);
 
   const cells = useMemo(() => {
     const [year, month] = anchor.split("-").map(Number);
@@ -620,10 +573,7 @@ function CalendarTab({ plans, learningDate, onOpenPlan, onCreate }) {
 
   const pickedCell = index.get(picked);
   // เคยคำนวณใหม่ทุก render — ทุกครั้งที่แตะวันในตารางก็กาง Map ทั้งก้อนใหม่ฟรี ๆ
-  const heavyDays = useMemo(
-    () => [...index.entries()].filter(([date, cell]) => date >= learningDate && cellLoad(cell) !== "ok" && cellLoad(cell) !== "none"),
-    [index, learningDate]
-  );
+  const heavyDays = useMemo(() => heavyDaysFrom(index, learningDate), [index, learningDate]);
 
   return (
     <div className="mt-4 flex flex-col gap-3">
